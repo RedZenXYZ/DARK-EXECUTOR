@@ -1,1229 +1,1406 @@
--- Singleton cache: re-executing returns the existing Dark/Lib
-if DARK then
-	return DARK
-end
+local Dark = loadstring(game:HttpGet("https://raw.githubusercontent.com/RedZenXYZ/DARK-LIBRARY/refs/heads/main/source.lua"))()
 
--- ── Save Config ──--
+local Lib = Dark.CreateLib()
+local executor = Lib:AddTab("EXECUTOR", "full")
+
+-- ── Save directory ────────────────────────────────────────────────────────────
 local SAVE_DIR = "DarkExecutor"
+local TABS_DIR = SAVE_DIR .. "/Tabs"
+local ORDER_FILE = SAVE_DIR .. "/Layout"
 if not isfolder(SAVE_DIR) then makefolder(SAVE_DIR) end
+if not isfolder(TABS_DIR) then makefolder(TABS_DIR) end
 
-function jsonencode(Table)
-	return game:GetService("HttpService"):JSONEncode(Table)
+local function TabPath(name)
+	return TABS_DIR .. "/" .. name .. ".lua"
 end
 
-function jsondecode(TableString)
-	return game:GetService("HttpService"):JSONDecode(TableString)
+local function SaveTab(name, content)
+	pcall(writefile, TabPath(name), content)
 end
 
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
+local function LoadTab(name)
+	local ok, content = pcall(readfile, TabPath(name))
+	return ok and content or ""
+end
 
--- Tween presets
-local TWEEN_FAST   = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local TWEEN_MEDIUM = TweenInfo.new(0.20, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local function DeleteTab(name)
+	pcall(delfile, TabPath(name))
+end
 
--- Tab button colours
-local COL_TAB_IDLE     = Color3.fromRGB(220, 220, 225)
-local COL_TAB_SEL      = Color3.fromRGB(255, 255, 255)
-local COL_TAB_BG_SEL   = Color3.fromRGB(85, 170, 255) 
-local TRAN_TAB_IDLE    = 1
-local TRAN_TAB_SEL     = 0.35
-
-local Dark = {}
-function Dark.CreateLib()
-	if DARK_LIB then
-		return DARK_LIB
+local function RenameTabFile(oldName, newName)
+	local ok, content = pcall(readfile, TabPath(oldName))
+	if ok then
+		pcall(writefile, TabPath(newName), content)
+		pcall(delfile, TabPath(oldName))
 	end
-	local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui"))
-	local Frame = Instance.new("Frame", ScreenGui)
-	local Gradient = Instance.new("UIGradient", Frame)
-	local Background = Instance.new("ImageLabel", Frame)
-	local MoreExecutor = Instance.new("Frame", ScreenGui)
-	local OpenButton = Instance.new("TextButton", MoreExecutor)
-	local Label = Instance.new("ImageLabel", OpenButton)
-	local Scroll = Instance.new("CanvasGroup", Frame)
-	local ScrollBG = Instance.new("ImageLabel", Scroll)
-	local TabsScroll = Instance.new("ScrollingFrame", Scroll)
-	local UIListLayout = Instance.new("UIListLayout", TabsScroll)
-	local TabClose = Instance.new("ImageButton", Scroll)
-	local TabBarOpen = Instance.new("ImageButton", Frame)
-	local FrameTabs = Instance.new("Folder", Frame)
+end
 
-	ScreenGui.Name = "DARK_EXECUTOR"
-	ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+-- ── Tab bar (script tabs row above the editor) ────────────────────────────────
+local TAB_H = 28  -- height of the tab bar
 
-	-- ── Floating open/close button ──────────────────────────────────────────
-	MoreExecutor.Name = "MoreExecutor"
-	MoreExecutor.Size = UDim2.new(0, 42, 0, 42)
-	MoreExecutor.AnchorPoint = Vector2.new(0, 1)
-	MoreExecutor.Position = UDim2.new(0, 17, 1, -17)
-	MoreExecutor.BackgroundTransparency = 1
+local TabBar = Instance.new("Frame", executor.Frame)
+TabBar.Name = "TabBar"
+TabBar.AnchorPoint = Vector2.new(0, 0)
+TabBar.Position = UDim2.new(0, 10, 0, 4)
+TabBar.Size = UDim2.new(1, -50, 0, TAB_H)
+TabBar.BackgroundTransparency = 1
+TabBar.ClipsDescendants = true
 
-	local tween = nil
-	OpenButton.Name = "OpenButton"
-	OpenButton.Size = UDim2.new(1, 0, 1, 0)
-	OpenButton.AnchorPoint = Vector2.new(0, 0)
-	OpenButton.Position = UDim2.new(0, 0, 0, 0)
-	OpenButton.BackgroundTransparency = 0.4
-	OpenButton.BackgroundColor3 = Color3.fromRGB(0, 0, 10)
-	OpenButton.Text = ""
+local TabBarScroll = Instance.new("ScrollingFrame", TabBar)
+TabBarScroll.Size = UDim2.new(1, -30, 1, 0)
+TabBarScroll.BackgroundTransparency = 1
+TabBarScroll.ScrollBarThickness = 0
+TabBarScroll.ScrollingDirection = "X"
+TabBarScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+TabBarScroll.AutomaticCanvasSize = Enum.AutomaticSize.X
+TabBarScroll.ElasticBehavior = Enum.ElasticBehavior.Never
 
-	local btnCorner = Instance.new("UICorner", OpenButton)
-	btnCorner.CornerRadius = UDim.new(1, 0)
+local TabBarLayout = Instance.new("UIListLayout", TabBarScroll)
+TabBarLayout.FillDirection = Enum.FillDirection.Horizontal
+TabBarLayout.Padding = UDim.new(0, 4)
+TabBarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+TabBarLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+-- "+" button to add a new script tab
+local AddTabBtn = Instance.new("TextButton", TabBar)
+AddTabBtn.AnchorPoint = Vector2.new(1, 0.5)
+AddTabBtn.Position = UDim2.new(1, 0, 0.5, 0)
+AddTabBtn.Size = UDim2.new(0, TAB_H, 0, TAB_H)
+AddTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+AddTabBtn.BackgroundTransparency = 0.3
+AddTabBtn.Text = "+"
+AddTabBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+AddTabBtn.TextSize = 16
+AddTabBtn.Font = Enum.Font.GothamBold
+AddTabBtn.BorderSizePixel = 0
+local addCorner = Instance.new("UICorner", AddTabBtn)
+addCorner.CornerRadius = UDim.new(1, 0)
+
+-- ── Editor area (below the tab bar) ──────────────────────────────────────────
+local EDITOR_TOP = TAB_H + 8
+
+-- LineNumbers lives in its own ScrollingFrame on the left, outside Source
+local LINE_W = 30  -- initial width, grows with content
+
+local LineNumFrame = Instance.new("Frame", executor.Frame)
+LineNumFrame.Name = "LineNumFrame"
+LineNumFrame.AnchorPoint = Vector2.new(0, 0)
+LineNumFrame.Position = UDim2.new(0, 10, 0, EDITOR_TOP)
+LineNumFrame.Size = UDim2.new(0, LINE_W, 1, -(EDITOR_TOP + 6))
+LineNumFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+LineNumFrame.BackgroundTransparency = 0.5
+LineNumFrame.BorderSizePixel = 0
+LineNumFrame.ClipsDescendants = true
+
+local LineNumScroll = Instance.new("ScrollingFrame", LineNumFrame)
+LineNumScroll.Name = "LineNumScroll"
+LineNumScroll.Size = UDim2.new(1, 0, 1, 0)
+LineNumScroll.BackgroundTransparency = 1
+LineNumScroll.ScrollBarThickness = 0
+LineNumScroll.ScrollingDirection = "Y"
+LineNumScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+LineNumScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+LineNumScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+LineNumScroll.ScrollingEnabled = false
+
+-- Source sits to the right of LineNumFrame, width adjusts when line nums grow
+local Source = Instance.new("ScrollingFrame", executor.Frame)
+Source.Name = "Source"
+Source.AnchorPoint = Vector2.new(0, 0)
+Source.Position = UDim2.new(0, 10 + LINE_W + 2, 0, EDITOR_TOP)
+Source.Size = UDim2.new(1, -(10 + LINE_W + 2 + 40), 1, -(EDITOR_TOP + 6))
+Source.BackgroundTransparency = 0.5
+Source.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Source.BorderSizePixel = 0
+Source.CanvasSize = UDim2.new(0, 0, 0, 0)
+Source.ScrollBarImageColor3 = Color3.new(0, 1, 1)
+Source.ScrollBarThickness = 4
+Source.AutomaticCanvasSize = Enum.AutomaticSize.XY
+Source.ElasticBehavior = Enum.ElasticBehavior.Never
+Source.VerticalScrollBarInset = Enum.ScrollBarInset.Always
+
+local ScriptBox = Instance.new("TextBox", Source)
+ScriptBox.Position = UDim2.new(0, 0, 0, 0)
+ScriptBox.Size = UDim2.new(1, 0, 1, 0)
+ScriptBox.AutomaticSize = Enum.AutomaticSize.XY
+ScriptBox.BackgroundTransparency = 1
+ScriptBox.BorderSizePixel = 0
+ScriptBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+ScriptBox.TextXAlignment = Enum.TextXAlignment.Left
+ScriptBox.TextYAlignment = Enum.TextYAlignment.Top
+ScriptBox.TextWrapped = false
+ScriptBox.TextScaled = false
+ScriptBox.ClearTextOnFocus = false
+ScriptBox.MultiLine = true
+ScriptBox.TextSize = 14
+ScriptBox.Font = Enum.Font.Code
+ScriptBox.Text = ""
+ScriptBox.TextEditable = true
+ScriptBox.CursorPosition = -1
+
+local ScriptPadding = Instance.new("UIPadding", ScriptBox)
+ScriptPadding.PaddingRight = UDim.new(0, 30)
+ScriptPadding.PaddingBottom = UDim.new(0, 30)
+
+local function UpdateScriptBoxSize()
+	if ScriptBox:IsFocused() then return end
+	local tx, ty = ScriptBox.TextBounds.X, ScriptBox.TextBounds.Y
+	local sx, sy = Source.AbsoluteSize.X, Source.AbsoluteSize.Y
+	local newX = math.max(0, tx - sx + 30)
+	--local newY = math.max(0, ty - sy + 30)
+	ScriptBox.Size = UDim2.new(1, newX, 1, 0)
+end
+
+ScriptBox:GetPropertyChangedSignal("TextBounds"):Connect(UpdateScriptBoxSize)
+ScriptBox.FocusLost:Connect(UpdateScriptBoxSize)
+Source:GetPropertyChangedSignal("AbsoluteSize"):Connect(UpdateScriptBoxSize)
+
+local LineNumbers = Instance.new("TextLabel", LineNumScroll)
+LineNumbers.Name = "LineNumbers"
+LineNumbers.AnchorPoint = Vector2.new(0, 0)
+LineNumbers.Position = UDim2.new(0, 0, 0, 0)
+LineNumbers.Size = UDim2.new(1, 0, 1, 0)
+LineNumbers.AutomaticSize = Enum.AutomaticSize.Y
+LineNumbers.BackgroundTransparency = 1
+LineNumbers.BorderSizePixel = 0
+LineNumbers.TextColor3 = Color3.fromRGB(120, 200, 200)
+LineNumbers.TextXAlignment = Enum.TextXAlignment.Right
+LineNumbers.TextYAlignment = Enum.TextYAlignment.Top
+LineNumbers.Font = Enum.Font.Code
+LineNumbers.TextSize = 14
+LineNumbers.TextWrapped = false
+LineNumbers.Text = "1"
+
+local TextPadding = Instance.new("UIPadding", LineNumbers)
+TextPadding.PaddingRight = UDim.new(0, 2)
+TextPadding.PaddingBottom = UDim.new(0, 30)
+
+local function UpdateLines()
+	local count = 1
+	for _ in string.gmatch(ScriptBox.Text, "\n") do count += 1 end
+	local t = {}
+	for i = 1, count do t[i] = i end
+	LineNumbers.Text = table.concat(t, "\n")
+end
+UpdateLines()
+ScriptBox:GetPropertyChangedSignal("Text"):Connect(UpdateLines)
+
+-- When line number text width changes, resize LineNumFrame and reposition Source
+local GUTTER_PAD = 8
+LineNumbers:GetPropertyChangedSignal("TextBounds"):Connect(function()
+	local newW = LineNumbers.TextBounds.X + GUTTER_PAD
+	local left = 10 + newW + 2
+	LineNumFrame.Size = UDim2.new(0, newW, 1, -(EDITOR_TOP + 6))
+	Source.Position = UDim2.new(0, left, 0, EDITOR_TOP)
+	Source.Size = UDim2.new(1, -(left + 40), 1, -(EDITOR_TOP + 6))
+end)
+
+-- Sync LineNumScroll vertical offset with Source canvas scroll
+Source:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+	LineNumScroll.CanvasPosition = Vector2.new(0, Source.CanvasPosition.Y)
+end)
+
+-- ── Tool buttons ──────────────────────────────────────────────────────────────
+local ToolContainer = Instance.new("Frame", executor.Frame)
+ToolContainer.Name = "ToolContainer"
+ToolContainer.AnchorPoint = Vector2.new(1, 0.5)
+ToolContainer.Position = UDim2.new(1, -2, 0.5, 0)
+ToolContainer.Size = UDim2.new(0, 36, 1, -16)
+ToolContainer.BackgroundTransparency = 1
+
+local ToolLayout = Instance.new("UIListLayout", ToolContainer)
+ToolLayout.Padding = UDim.new(0, 6)
+ToolLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+ToolLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+ToolLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local function CreateToolButton(imageId)
+	local btn = Instance.new("TextButton", ToolContainer)
+	btn.Size = UDim2.new(0, 32, 0, 32)
+	btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+	btn.BackgroundTransparency = 0.3
+	btn.BorderSizePixel = 0
+	btn.Text = ""
+	local c = Instance.new("UICorner", btn)
+	c.CornerRadius = UDim.new(0, 10)
 	
-	-- CmdBar (shown on double-click of OpenButton)
-	local CmdBar = Instance.new("TextBox", MoreExecutor)
-	CmdBar.Name = "CmdBar"
-	CmdBar.Size = UDim2.new(0, 0, 1, 0)           -- starts collapsed (width = 0)
-	CmdBar.Position = UDim2.new(1, 6, 0, 0)        -- sits right of OpenButton
-	CmdBar.AnchorPoint = Vector2.new(0, 0)
-	CmdBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	CmdBar.BackgroundTransparency = 0.45
-	CmdBar.PlaceholderText = "Execute..."
-	CmdBar.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
-	CmdBar.Text = ""
-	CmdBar.TextColor3 = Color3.fromRGB(220, 220, 225)
-	CmdBar.TextSize = 13
-	CmdBar.TextXAlignment = Enum.TextXAlignment.Left
-	CmdBar.Font = Enum.Font.Gotham
-	CmdBar.ClearTextOnFocus = false
-	CmdBar.ClipsDescendants = true
-	CmdBar.Visible = false
-	
-	local cmdCorner = Instance.new("UICorner", CmdBar)
-	cmdCorner.CornerRadius = UDim.new(0, 8)
-	
-	local cmdPad = Instance.new("UIPadding", CmdBar)
-	cmdPad.PaddingLeft = UDim.new(0, 8)
-	cmdPad.PaddingRight = UDim.new(0, 8)
-	
-	local lastClick = 0
-	local cmdBarOpen = false
-	local cmdTween = nil
-	local singleClickTask = nil
-	
-	OpenButton.MouseButton1Click:Connect(function()
-	    local now = tick()
-	    if now - lastClick < 0.35 then
-	        -- Double-click: cancel pending single-click, toggle cmdbar
-	        lastClick = 0
-	        if singleClickTask then
-	            task.cancel(singleClickTask)
-	            singleClickTask = nil
-	        end
-	        if cmdTween then cmdTween:Cancel() end
-	        if cmdBarOpen then
-	            cmdBarOpen = false
-	            cmdTween = TweenService:Create(CmdBar, TWEEN_MEDIUM, {Size = UDim2.new(0, 0, 1, 0)})
-	            cmdTween:Play()
-	            cmdTween.Completed:Connect(function()
-	                CmdBar.Visible = false
-	                cmdTween = nil
-	            end)
-	        else
-	            cmdBarOpen = true
-	            CmdBar.Visible = true
-	            cmdTween = TweenService:Create(CmdBar, TWEEN_MEDIUM, {Size = UDim2.new(0, 200, 1, 0)})
-	            cmdTween:Play()
-	            cmdTween.Completed:Connect(function()
-	                CmdBar:CaptureFocus()
-	                cmdTween = nil
-	            end)
-	        end
-	    else
-	        lastClick = now
-	        -- Delay single-click so double-click can cancel it
-	        singleClickTask = task.delay(0.35, function()
-	            singleClickTask = nil
-	            if tween ~= nil then return end
-	            if Frame.Visible then
-	                tween = TweenService:Create(Frame, TweenInfo.new(0.25), {Size = UDim2.new(0.5, 0, 0, 0)})
-	                tween:Play()
-	                tween.Completed:Connect(function()
-	                    tween = nil
-	                    Frame.Visible = false
-	                end)
-	            else
-	                Frame.Visible = true
-	                tween = TweenService:Create(Frame, TweenInfo.new(0.5), {Size = UDim2.new(0.5, 0, 0.65, 0)})
-	                tween:Play()
-	                tween.Completed:Connect(function()
-	                    tween = nil
-	                end)
-	            end
-	        end)
-	    end
-	end)
-	
-	-- Execute on Enter
-	local execCmd = execCmd
-	CmdBar.FocusLost:Connect(function(enterPressed)
-	    if enterPressed and CmdBar.Text ~= "" then
-	        if execCmd then
-	            execCmd(CmdBar.Text, game:GetService("Players").LocalPlayer)
-	        else
-	            warn("[CmdBar] Missing Infinite Yield Commands...")
-	        end
-	    end
-		CmdBar.Text = ""
-		if cmdTween then cmdTween:Cancel() end
-		if cmdBarOpen then
-            cmdBarOpen = false
-            cmdTween = TweenService:Create(CmdBar, TWEEN_MEDIUM, {Size = UDim2.new(0, 0, 1, 0)})
-            cmdTween:Play()
-            cmdTween.Completed:Connect(function()
-                CmdBar.Visible = false
-                cmdTween = nil
-            end)
+	local icon = Instance.new("ImageLabel", btn)
+	icon.Size = UDim2.new(0.8, 0, 0.8, 0)
+	icon.Position = UDim2.new(0.5, 0, 0.5, 0)
+	icon.BackgroundTransparency = 1
+	icon.AnchorPoint = Vector2.new(0.5, 0.5)
+	icon.Image = imageId and ("rbxassetid://" .. imageId) or ""
+	return btn
+end
+
+local ExecuteBtn = CreateToolButton(116651535114885)
+local UndoBtn    = CreateToolButton(107044600796242)
+local RedoBtn    = CreateToolButton(133742372514080)
+local ClearBtn   = CreateToolButton(128372145651723)
+local SaveBtn   = CreateToolButton(11768914234)
+
+-- ── Undo / Redo history ───────────────────────────────────────────────────────
+local History   = {}
+local RedoStack = {}
+local MaxHistory = 100
+local Changing   = false
+
+local function UpdateUndoRedoState()
+	local canUndo = #History > 1
+	local canRedo = #RedoStack > 0
+	local undoIcon = UndoBtn:FindFirstChildOfClass("ImageLabel")
+	local redoIcon = RedoBtn:FindFirstChildOfClass("ImageLabel")
+	if undoIcon then undoIcon.ImageTransparency = canUndo and 0 or 0.65 end
+	if redoIcon then redoIcon.ImageTransparency = canRedo and 0 or 0.65 end
+	UndoBtn.BackgroundTransparency = canUndo and 0.3 or 0.7
+	RedoBtn.BackgroundTransparency = canRedo and 0.3 or 0.7
+end
+
+local function SaveState(text)
+	if History[#History] ~= text then
+		table.insert(History, text)
+		if #History > MaxHistory then table.remove(History, 1) end
+	end
+	UpdateUndoRedoState()
+end
+
+SaveState(ScriptBox.Text)
+
+ExecuteBtn.MouseButton1Click:Connect(function()
+	local func, err = loadstring(ScriptBox.Text)
+	if func then pcall(func) else warn("Execution Error:", err) end
+end)
+
+UndoBtn.MouseButton1Click:Connect(function()
+	if #History > 1 then
+		Changing = true
+		local last = table.remove(History)
+		table.insert(RedoStack, last)
+		ScriptBox.Text = History[#History]
+		task.wait(0.1)
+		Changing = false
+		UpdateUndoRedoState()
+	end
+end)
+
+RedoBtn.MouseButton1Click:Connect(function()
+	if #RedoStack > 0 then
+		Changing = true
+		local text = table.remove(RedoStack)
+		table.insert(History, text)
+		ScriptBox.Text = text
+		task.wait(0.1)
+		Changing = false
+		UpdateUndoRedoState()
+	end
+end)
+
+ClearBtn.MouseButton1Click:Connect(function()
+	ScriptBox.Text = ""
+end)
+
+SaveBtn.MouseButton1Click:Connect(function()
+	-- default name from current tab
+	local defaultName = ""
+	if activeTab > 0 and ScriptTabs[activeTab] then
+		defaultName = ScriptTabs[activeTab].name
+	end
+	MakePopup(executor.Frame, "Save to Scripts Hub", {
+		{name = "Name", placeholder = defaultName ~= "" and defaultName or "Script name...", multiline = false},
+	}, function(values)
+		local newName = SanitizeName(values[1]:match("^%s*(.-)%s*$"))
+		if newName == "" then newName = defaultName end
+		if newName == "" then newName = "Saved Script" end
+		local content = ScriptBox.Text
+		-- avoid collision
+		local base, n = newName, 1
+		while HubEntries[newName] do
+			newName = base .. " (" .. n .. ")"
+			n += 1
 		end
+		AddHubEntry(newName, content)
 	end)
-	
-	Label.Name = "Icon"
-	Label.Image = "https://www.roblox.com/asset-thumbnail/image?assetId=16149179369&width=420&height=420&format=png"
-	Label.Size = UDim2.new(0, 24, 0, 24)
-	Label.BackgroundTransparency = 1
-	Label.AnchorPoint = Vector2.new(0.5, 0.5)
-	Label.Position = UDim2.new(0.5, 0, 0.5, 0)
+end)
 
-	-- ── Main window ─────────────────────────────────────────────────────────
-	Frame.Name = "MainFrame"
-	Frame.AnchorPoint = Vector2.new(0.5, 0.5)
-	Frame.Position = UDim2.new(0.5, 0, 0.45, 0)
-	Frame.Size = UDim2.new(0.5, 0, 0, 0)
-	Frame.BackgroundTransparency = 0.5
-	Frame.BackgroundColor3 = Color3.new(1, 1, 1)
-	Frame.Visible = false
-	Frame.ClipsDescendants = false
 
-	local frameCorner = Instance.new("UICorner", Frame)
-	frameCorner.CornerRadius = UDim.new(0, 8)
-	
-	--== UI SHINING EFFECT ==--
-	Gradient.Color = ColorSequence.new({
-	    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)), 
-	    ColorSequenceKeypoint.new(0.3, Color3.fromRGB(50, 50, 50)), 
-	    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 150, 150)), 
-	    ColorSequenceKeypoint.new(0.7, Color3.fromRGB(50, 50, 50)), 
-	    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
-	})
-	
-	Gradient.Transparency = NumberSequence.new({
-	    NumberSequenceKeypoint.new(0, 0),
-	    NumberSequenceKeypoint.new(0.5, 0.2),
-	    NumberSequenceKeypoint.new(1, 0)
-	})
-	
-	local tweenInfo = TweenInfo.new(
-	    10, 
-	    Enum.EasingStyle.Linear,
-	    Enum.EasingDirection.Out,
-	    -1, 
-	    false
-	)
-	
-	Gradient.Offset = Vector2.new(0, -2)
-	Gradient.Rotation = 50
-	local tween = TweenService:Create(Gradient, tweenInfo, {
-	    Offset = Vector2.new(0, 2)
-	})
-	
-	tween:Play()
-	
-	Background.Name = "ImageBackground"
-	Background.Size = UDim2.new(1, 0, 1, 0)
-	Background.BackgroundTransparency = 1
-	Background.Image = ""
-	Background.ImageTransparency = 0.5
-	
-	local bgCorner = Instance.new("UICorner", Background)
-	bgCorner.CornerRadius = UDim.new(0, 8)
-	
-	-- ── Drag handle ──────────────────────────────────────────────────────────
-	local DragLine = Instance.new("Frame", Frame)
-	DragLine.Size = UDim2.new(0.6, 0, 0, 20)
-	DragLine.Position = UDim2.new(0.5, 0, 1, 6)
-	DragLine.AnchorPoint = Vector2.new(0.5, 0)
-	DragLine.BackgroundTransparency = 1
-	DragLine.Active = true
 
-	local dragIndicator = Instance.new("Frame", DragLine)
-	dragIndicator.Size = UDim2.new(0.4, 0, 0, 4)
-	dragIndicator.AnchorPoint = Vector2.new(0.5, 0.5)
-	dragIndicator.Position = UDim2.new(0.5, 0, 0.5, 0)
-	dragIndicator.BackgroundTransparency = 0.5
-	dragIndicator.BackgroundColor3 = Color3.fromRGB(180, 180, 180)
+--[[
+	Each entry in ScriptTabs:
+	  { name, button (the tab TextButton), closeBtn }
+	activeTab  = index of the currently selected tab
+	pendingClose[i] = true if the tab was clicked once for close (needs second click)
+]]
 
-	local dragCorner = Instance.new("UICorner", dragIndicator)
-	dragCorner.CornerRadius = UDim.new(1, 0)
+local ScriptTabs  = {}
+local activeTab   = 0
+local pendingClose = {}
+local tabCounter  = 0
 
-	local dragging = false
-	local dragStart, startPos
+local function SanitizeName(name)
+	-- strip characters that are unsafe in filenames
+	return (name:gsub('[<>:"/\\|?*%c]', "_"))
+end
 
-	DragLine.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = Frame.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
+local function SelectTab(index)
+	-- save current content before switching
+	if activeTab > 0 and ScriptTabs[activeTab] then
+		ScriptTabs[activeTab].content = ScriptBox.Text
+		SaveTab(ScriptTabs[activeTab].name, ScriptBox.Text)
+	end
+
+	activeTab = index
+	local tab = ScriptTabs[index]
+
+	-- update ScriptBox
+	Changing = true
+	ScriptBox.Text = tab.content
+	History = {tab.content}
+	RedoStack = {}
+	Changing = false
+	UpdateLines()
+	UpdateUndoRedoState()
+
+	-- update button visual states
+	for i, t in ipairs(ScriptTabs) do
+		t.button.BackgroundTransparency = (i == index) and 0.2 or 0.6
+	end
+
+	-- clear any pending-close state on the newly selected tab
+	pendingClose[index] = nil
+	local closeLabel = tab.button:FindFirstChild("CloseLabel")
+	if closeLabel then closeLabel.Text = "×" end
+end
+
+local function RemoveTab(index)
+	local tab = ScriptTabs[index]
+	DeleteTab(tab.name)
+	tab.button:Destroy()
+	table.remove(ScriptTabs, index)
+	table.remove(pendingClose, index)
+
+	if #ScriptTabs == 0 then
+		-- no tabs left — clear editor
+		activeTab = 0
+		Changing = true
+		ScriptBox.Text = ""
+		Changing = false
+		UpdateLines()
+		return
+	end
+
+	-- pick a sensible tab to switch to
+	local next = math.min(index, #ScriptTabs)
+	activeTab = 0  -- force SelectTab to not save to the removed tab
+	SelectTab(next)
+end
+
+local function AddScriptTab(name, content)
+	name = name or ("Script " .. tabCounter)
+	content = content or "-- " .. name .. "\n"
+
+	-- ── tab button container ──────────────────────────────────────────────────
+	local btn = Instance.new("TextButton", TabBarScroll)
+	btn.Name = "ScriptTab_" .. tabCounter
+	btn.LayoutOrder = tabCounter
+	btn.Size = UDim2.new(0, 90, 1, 0)
+	btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+	btn.BackgroundTransparency = 0.6
+	btn.Text = ""
+	btn.AutoButtonColor = false
+	btn.ClipsDescendants = false
+
+	local btnCorner = Instance.new("UICorner", btn)
+	btnCorner.CornerRadius = UDim.new(1, 0)
+
+	-- name label (left side, editable on double-click)
+	local nameLabel = Instance.new("TextLabel", btn)
+	nameLabel.Name = "NameLabel"
+	nameLabel.AnchorPoint = Vector2.new(0, 0.5)
+	nameLabel.Position = UDim2.new(0, 8, 0.5, 0)
+	nameLabel.Size = UDim2.new(1, -26, 1, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = name
+	nameLabel.TextColor3 = Color3.fromRGB(210, 210, 210)
+	nameLabel.TextSize = 11
+	nameLabel.Font = Enum.Font.GothamMedium
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+
+	-- hidden TextBox for renaming
+	local nameBox = Instance.new("TextBox", btn)
+	nameBox.Name = "NameBox"
+	nameBox.AnchorPoint = Vector2.new(0, 0.5)
+	nameBox.Position = UDim2.new(0, 8, 0.5, 0)
+	nameBox.Size = UDim2.new(1, -26, 1, 0)
+	nameBox.BackgroundTransparency = 1
+	nameBox.Text = name
+	nameBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nameBox.TextSize = 11
+	nameBox.Font = Enum.Font.GothamMedium
+	nameBox.TextXAlignment = Enum.TextXAlignment.Left
+	nameBox.ClearTextOnFocus = false
+	nameBox.Visible = false
+
+	-- close button (right side, needs two clicks)
+	local closeBtn = Instance.new("TextButton", btn)
+	closeBtn.Name = "CloseLabel"
+	closeBtn.AnchorPoint = Vector2.new(1, 0.5)
+	closeBtn.Position = UDim2.new(1, -4, 0.5, 0)
+	closeBtn.Size = UDim2.new(0, 16, 0, 16)
+	closeBtn.BackgroundTransparency = 1
+	closeBtn.Text = "×"
+	closeBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+	closeBtn.TextSize = 13
+	closeBtn.Font = Enum.Font.GothamBold
+
+	local index = #ScriptTabs + 1
+	ScriptTabs[index] = {
+		name    = name,
+		content = content,
+		button  = btn,
+	}
+
+	-- save file if it doesn't already exist
+	if not isfile(TabPath(name)) then
+		SaveTab(name, content)
+	end
+
+	-- ── interactions ──────────────────────────────────────────────────────────
+
+	-- select this tab on click (on the button itself, not the close btn)
+	btn.MouseButton1Click:Connect(function()
+		local myIndex
+		for i, t in ipairs(ScriptTabs) do
+			if t.button == btn then myIndex = i break end
+		end
+		if myIndex then SelectTab(myIndex) end
+	end)
+
+	-- double-click (two clicks within 0.4s) on the active tab enters rename mode
+	local lastClickTime = 0
+	btn.MouseButton1Click:Connect(function()
+		local myIndex
+		for i, t in ipairs(ScriptTabs) do
+			if t.button == btn then myIndex = i break end
+		end
+		if myIndex ~= activeTab then return end
+		local now = tick()
+		if now - lastClickTime < 0.4 then
+			-- enter rename mode
+			nameLabel.Visible = false
+			nameBox.Visible = true
+			nameBox:CaptureFocus()
+		end
+		lastClickTime = now
+	end)
+
+	nameBox.FocusLost:Connect(function(enterPressed)
+		local newName = nameBox.Text:match("^%s*(.-)%s*$")  -- trim whitespace
+		newName = SanitizeName(newName)
+		if newName == "" then newName = nameLabel.Text end
+
+		local myIndex
+		for i, t in ipairs(ScriptTabs) do
+			if t.button == btn then myIndex = i break end
+		end
+
+		if myIndex and newName ~= ScriptTabs[myIndex].name then
+			RenameTabFile(ScriptTabs[myIndex].name, newName)
+			ScriptTabs[myIndex].name = newName
+		end
+
+		nameLabel.Text = newName
+		nameBox.Text   = newName
+		nameLabel.Visible = true
+		nameBox.Visible   = false
+	end)
+
+	-- close button: first click turns it red + sets pending, second click removes
+	closeBtn.MouseButton1Click:Connect(function()
+		local myIndex
+		for i, t in ipairs(ScriptTabs) do
+			if t.button == btn then myIndex = i break end
+		end
+		if not myIndex then return end
+
+		if pendingClose[myIndex] then
+			-- second click — actually close
+			RemoveTab(myIndex)
+		else
+			-- first click — arm for close, dim × to gray
+			pendingClose[myIndex] = true
+			closeBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+			-- auto-disarm after 2 seconds
+			task.delay(2, function()
+				if pendingClose[myIndex] then
+					pendingClose[myIndex] = nil
+					if closeBtn and closeBtn.Parent then
+						closeBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+					end
 				end
 			end)
 		end
 	end)
 
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-			or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			Frame.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y
-			)
+	-- select the new tab immediately
+	SelectTab(index)
+	return index
+end
+
+-- "+" button creates a new blank tab
+AddTabBtn.MouseButton1Click:Connect(function()
+	tabCounter += 1
+	AddScriptTab("Script " .. tabCounter)
+end)
+
+local autoSaveThread = nil
+ScriptBox:GetPropertyChangedSignal("Text"):Connect(function()
+	if Changing then return end
+	SaveState(ScriptBox.Text)
+	RedoStack = {}
+	-- auto-save: debounce 1s so we don't writefile on every keystroke
+	if autoSaveThread then task.cancel(autoSaveThread) end
+	autoSaveThread = task.delay(1, function()
+		if activeTab > 0 and ScriptTabs[activeTab] then
+			ScriptTabs[activeTab].content = ScriptBox.Text
+			SaveTab(ScriptTabs[activeTab].name, ScriptBox.Text)
 		end
 	end)
+end)
 
-	-- ── Tab sidebar ──────────────────────────────────────────────────────────
-	Scroll.Name = "ScrollFrame"
-	Scroll.Size = UDim2.new(0.2, 0, 1, 0)
-	Scroll.AnchorPoint = Vector2.new(0, 0)
-	Scroll.Position = UDim2.new(1, 8, 0, 0)
-	Scroll.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-	Scroll.BackgroundTransparency = 1
+-- ── Boot: load saved tabs or create a default one ─────────────────────────────
+local function BootTabs()
+	-- collect .lua files saved from previous sessions
+	local loaded = false
+	local ok, files = pcall(listfiles, TABS_DIR)
+	if ok and files then
+		table.sort(files)
+		for _, path in ipairs(files) do
+			local fileName = path:match("([^/\\]+)%.lua$")
+			if fileName then
+				local content = LoadTab(fileName)
+				AddScriptTab(fileName, content)
+				loaded = true
+			end
+		end
+	end
+	if not loaded then
+		AddScriptTab("Script 1", "-- Script 1\n")
+	end
+end
 
-	local scrollCorner = Instance.new("UICorner", Scroll)
-	scrollCorner.CornerRadius = UDim.new(0, 12)
+BootTabs()
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- SCRIPTS HUB TAB
+-- ══════════════════════════════════════════════════════════════════════════════
+local HUB_DIR  = SAVE_DIR .. "/Hub"
+local FAV_FILE = SAVE_DIR .. "/favourites.txt"
+if not isfolder(HUB_DIR) then makefolder(HUB_DIR) end
+
+-- ── Persistence helpers ───────────────────────────────────────────────────────
+local function HubPath(name)
+	return HUB_DIR .. "/" .. name .. ".lua"
+end
+
+local function SaveHubScript(name, content)
+	pcall(writefile, HubPath(name), content)
+end
+
+local function LoadHubScript(name)
+	local ok, c = pcall(readfile, HubPath(name))
+	return ok and c or ""
+end
+
+local function DeleteHubScript(name)
+	pcall(delfile, HubPath(name))
+end
+
+local function RenameHubFile(oldName, newName)
+	local ok, c = pcall(readfile, HubPath(oldName))
+	if ok then
+		pcall(writefile, HubPath(newName), c)
+		pcall(delfile, HubPath(oldName))
+	end
+end
+
+-- favourites and auto-execute stored as newline-separated names
+local Favourites = {}
+local AutoExec   = {}
+
+local AUTOEXEC_FILE = SAVE_DIR .. "/autoexec.txt"
+
+local function LoadFavourites()
+	local ok, raw = pcall(readfile, FAV_FILE)
+	if not ok then return end
+	for line in raw:gmatch("[^\n]+") do
+		Favourites[line:match("^%s*(.-)%s*$")] = true
+	end
+end
+
+local function SaveFavourites()
+	local lines = {}
+	for name in pairs(Favourites) do table.insert(lines, name) end
+	pcall(writefile, FAV_FILE, table.concat(lines, "\n"))
+end
+
+local function LoadAutoExec()
+	local ok, raw = pcall(readfile, AUTOEXEC_FILE)
+	if not ok then return end
+	for line in raw:gmatch("[^\n]+") do
+		AutoExec[line:match("^%s*(.-)%s*$")] = true
+	end
+end
+
+local function SaveAutoExec()
+	local lines = {}
+	for name in pairs(AutoExec) do table.insert(lines, name) end
+	pcall(writefile, AUTOEXEC_FILE, table.concat(lines, "\n"))
+end
+
+LoadFavourites()
+LoadAutoExec()
+
+-- ── Shared popup helper ───────────────────────────────────────────────────────
+-- Creates a modal popup with text fields and confirm/cancel buttons.
+-- fields = { {name="label", placeholder="...", multiline=false}, ... }
+-- onConfirm(values) called with a table of field values on confirm.
+local function MakePopup(parent, title, fields, onConfirm)
+	-- dark backdrop
+	local backdrop = Instance.new("Frame", parent)
+	backdrop.Name = "PopupBackdrop"
+	backdrop.Size = UDim2.new(1, 0, 1, 0)
+	backdrop.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	backdrop.BackgroundTransparency = 0.4
+	backdrop.BorderSizePixel = 0
+	backdrop.ZIndex = 20
 	
-	ScrollBG.Name = "ScrollBackground"
-	ScrollBG.Size = UDim2.new(1, 0, 1, 0)
-	ScrollBG.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-	ScrollBG.BackgroundTransparency = 0.4
-	ScrollBG.ScaleType = Enum.ScaleType.Crop
+	local frameCorner = Instance.new("UICorner", backdrop)
+	frameCorner.CornerRadius = UDim.new(0, 8)
 
-	TabsScroll.Name = "TabsBar"
-	TabsScroll.AnchorPoint = Vector2.new(0, 0)
-	TabsScroll.Position = UDim2.new(0, 0, 0, 0)
-	TabsScroll.Size = UDim2.new(1, 0, 1, -28)
-	TabsScroll.BackgroundTransparency = 1
-	TabsScroll.BorderSizePixel = 0
-	TabsScroll.ScrollBarThickness = 0
-	TabsScroll.ScrollingDirection = "Y"
-	TabsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-	TabsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	TabsScroll.ClipsDescendants = true
+	local POPUP_W = 220
+	local FIELD_H = 24
+	local ML_H    = 70
+	local PAD     = 10
+	local BTN_H   = 26
 
-	UIListLayout.Padding = UDim.new(0, 4)
-	UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-	local UIPadding = Instance.new("UIPadding", TabsScroll)
-	UIPadding.PaddingTop = UDim.new(0, 4)
-	UIPadding.PaddingLeft = UDim.new(0, 4)
-	UIPadding.PaddingRight = UDim.new(0, 4)
-	UIPadding.PaddingBottom = UDim.new(0, 4)
-
-	-- ── Sidebar collapse button ──────────────────────────────────────────────
-	local scrolltween = nil
-	TabClose.Name = "TabClose"
-	TabClose.AnchorPoint = Vector2.new(0, 1)
-	TabClose.Size = UDim2.new(1, 0, 0, 28)
-	TabClose.Position = UDim2.new(0, 0, 1, 0)
-	TabClose.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-	TabClose.BackgroundTransparency = 0.4
-	TabClose.BorderSizePixel = 0
-	TabClose.Image = ""
-	TabClose.MouseButton1Click:Connect(function()
-		scrolltween = TweenService:Create(Scroll, TweenInfo.new(0.15), {Size = UDim2.new(0, 22, 1, 0)})
-		scrolltween:Play()
-		scrolltween.Completed:Connect(function()
-			scrolltween = nil
-			Scroll.Visible = false
-			TabBarOpen.Visible = true
-		end)
-	end)
-
-	local function MakeBarLine(parent, yOffset)
-		local l = Instance.new("Frame", parent)
-		l.Size = UDim2.new(0.45, 0, 0, 2)
-		l.AnchorPoint = Vector2.new(0.5, 0.5)
-		l.Position = UDim2.new(0.5, 0, 0.5, yOffset)
-		l.BackgroundTransparency = 0.4
-		l.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-		local c = Instance.new("UICorner", l)
-		c.CornerRadius = UDim.new(1, 0)
+	-- calculate total height
+	local contentH = PAD + 20 + PAD  -- title
+	for _, f in ipairs(fields) do
+		contentH += (f.multiline and ML_H or FIELD_H) + PAD
 	end
-	MakeBarLine(TabClose, -3)
-	MakeBarLine(TabClose, 3)
+	contentH += BTN_H + PAD
 
-	-- ── Sidebar expand button ────────────────────────────────────────────────
-	TabBarOpen.Name = "TabBarOpenButton"
-	TabBarOpen.AnchorPoint = Vector2.new(0, 0)
-	TabBarOpen.Size = UDim2.new(0, 22, 1, 0)
-	TabBarOpen.Position = UDim2.new(1, 6, 0, 0)
-	TabBarOpen.Visible = false
-	TabBarOpen.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-	TabBarOpen.BackgroundTransparency = 0.4
-	TabBarOpen.Image = ""
-	TabBarOpen.MouseButton1Click:Connect(function()
-		TabBarOpen.Visible = false
-		Scroll.Visible = true
-		scrolltween = TweenService:Create(Scroll, TweenInfo.new(0.15), {Size = UDim2.new(0.2, 0, 1, 0)})
-		scrolltween:Play()
-		scrolltween.Completed:Connect(function()
-			scrolltween = nil
-		end)
-	end)
+	local popup = Instance.new("Frame", backdrop)
+	popup.Name = "Popup"
+	popup.AnchorPoint = Vector2.new(0.5, 0.5)
+	popup.Position = UDim2.new(0.5, 0, 0.5, 0)
+	popup.Size = UDim2.new(0, POPUP_W, 0, contentH)
+	popup.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+	popup.BackgroundTransparency = 0.05
+	popup.BorderSizePixel = 0
+	popup.ZIndex = 21
 
-	local openCorner = Instance.new("UICorner", TabBarOpen)
-	openCorner.CornerRadius = UDim.new(0, 10)
+	local popupCorner = Instance.new("UICorner", popup)
+	popupCorner.CornerRadius = UDim.new(0, 12)
 
-	MakeBarLine(TabBarOpen, -3)
-	MakeBarLine(TabBarOpen, 3)
+	-- title label
+	local titleLbl = Instance.new("TextLabel", popup)
+	titleLbl.Size = UDim2.new(1, -PAD * 2, 0, 20)
+	titleLbl.Position = UDim2.new(0, PAD, 0, PAD)
+	titleLbl.BackgroundTransparency = 1
+	titleLbl.Text = title
+	titleLbl.TextColor3 = Color3.fromRGB(230, 230, 230)
+	titleLbl.TextSize = 13
+	titleLbl.Font = Enum.Font.GothamBold
+	titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+	titleLbl.ZIndex = 22
 
-	-- ────────────────────────────────────────────────────────────────────────
-	-- Helper: create a consistent component row container inside a tab page
-	-- ────────────────────────────────────────────────────────────────────────
-	local function MakeRow(parent, height)
-		local row = Instance.new("Frame", parent)
-		row.Size = UDim2.new(1, 0, 0, height or 38)
-		row.BackgroundTransparency = 1
-		return row
-	end
+	-- build fields
+	local boxes = {}
+	local yOffset = PAD + 20 + PAD
 
-	-- ────────────────────────────────────────────────────────────────────────
-	-- Helper: shared label style (left-side name + sub-info)
-	-- ────────────────────────────────────────────────────────────────────────
-	local function MakeLabel(parent, name, info)
-		local lbl = Instance.new("TextLabel", parent)
-		lbl.Size = UDim2.new(0.55, 0, 0, 16)
-		lbl.Position = UDim2.new(0, 10, 0, 5)
+	for _, f in ipairs(fields) do
+		local lbl = Instance.new("TextLabel", popup)
+		lbl.Size = UDim2.new(1, -PAD * 2, 0, 12)
+		lbl.Position = UDim2.new(0, PAD, 0, yOffset)
 		lbl.BackgroundTransparency = 1
-		lbl.Text = name or ""
-		lbl.TextColor3 = Color3.fromRGB(230, 230, 230)
-		lbl.TextSize = 13
+		lbl.Text = f.name
+		lbl.TextColor3 = Color3.fromRGB(150, 150, 150)
+		lbl.TextSize = 10
 		lbl.Font = Enum.Font.GothamMedium
 		lbl.TextXAlignment = Enum.TextXAlignment.Left
-		lbl.TextTruncate = Enum.TextTruncate.AtEnd
+		lbl.ZIndex = 22
+		yOffset += 13
 
-		if info and info ~= "" then
-			local sub = Instance.new("TextLabel", parent)
-			sub.Size = UDim2.new(0.55, 0, 0, 12)
-			sub.Position = UDim2.new(0, 10, 0, 22)
-			sub.BackgroundTransparency = 1
-			sub.Text = info
-			sub.TextColor3 = Color3.fromRGB(130, 130, 135)
-			sub.TextSize = 10
-			sub.Font = Enum.Font.Gotham
-			sub.TextXAlignment = Enum.TextXAlignment.Left
-			sub.TextTruncate = Enum.TextTruncate.AtEnd
-		end
-		return lbl
-	end
-	
-	-- ────────────────────────────────────────────────────────────────────────
-	-- Helper: make fading effect
-	-- ────────────────────────────────────────────────────────────────────────
-	function MakeFade(parent, height, position)
-		local pos = position == "bottom" and 1 or 0
-		local frame = Instance.new("Frame", parent)
-		frame.BackgroundTransparency = 0.4
-		frame.BackgroundColor3 = Color3.new(1, 1, 1)
-		frame.Size = UDim2.new(1, 0, 0, height or 40)
-		frame.Position = UDim2.new(0, 0, pos, 0)
-		frame.AnchorPoint = Vector2.new(0, pos)
-		frame.BorderSizePixel = 0
-		
-		local corner = parent:FindFirstChildOfClass("UICorner")
-		if corner then
-			corner:Clone().Parent = frame
-		end
-		
-		local gradient = Instance.new("UIGradient", frame)
-		gradient.Rotation = position == "bottom" and -90 or 90
-		gradient.Color = ColorSequence.new({
-		    ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 20, 20)),
-		    ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 20))
-		})
-		
-		gradient.Transparency = NumberSequence.new({
-		    NumberSequenceKeypoint.new(0, 0),
-		    NumberSequenceKeypoint.new(1, 1)
-		})
-		return frame
-	end
-	MakeFade(Scroll, 50)
-	local bottomFade = MakeFade(Scroll, 50, "bottom")
-	bottomFade.Position = UDim2.new(0, 0, 1, -28)
-	bottomFade:FindFirstChildOfClass("UICorner"):Destroy()
+		local fh = f.multiline and ML_H or FIELD_H
+		local box = Instance.new("TextBox", popup)
+		box.Size = UDim2.new(1, -PAD * 2, 0, fh)
+		box.Position = UDim2.new(0, PAD, 0, yOffset)
+		box.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		box.BackgroundTransparency = 0.2
+		box.BorderSizePixel = 0
+		box.Text = f.default or ""
+		box.PlaceholderText = f.placeholder or ""
+		box.PlaceholderColor3 = Color3.fromRGB(90, 90, 90)
+		box.TextColor3 = Color3.fromRGB(220, 220, 220)
+		box.TextSize = 12
+		box.Font = Enum.Font.Code
+		box.TextXAlignment = Enum.TextXAlignment.Left
+		box.TextYAlignment = f.multiline and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center
+		box.MultiLine = f.multiline or false
+		box.TextWrapped = f.multiline or false
+		box.ClearTextOnFocus = false
+		box.ZIndex = 22
 
-	-- ────────────────────────────────────────────────────────────────────────
-	-- Lib
-	-- ────────────────────────────────────────────────────────────────────────
-	local Lib = {}
-	local Tabs = {}
-	
-	function Lib:GetTab(tab, create)
-		local tab = Tabs[tab]
-		if create and tab == nil then
-			return Lib:AddTab(tab)
-		end
-		return tab
-	end
+		local bCorner = Instance.new("UICorner", box)
+		bCorner.CornerRadius = UDim.new(0, 6)
 
-	--[[
-		Lib:AddTab(labelText, mode)
-		  labelText – string label shown on the sidebar button
-		  mode      – nil / "scroll"  → default ScrollingFrame content area
-		              "full"          → raw Frame (you control layout entirely)
-	--]]
-	function Lib:AddTab(labelText, mode)
-		local indexnumber = tostring(#TabsScroll:GetChildren() - 1)
-		labelText = labelText or ("Tab_" .. indexnumber)
-
-		-- ── Tab sidebar button ─────────────────────────────────────────────
-		local TabButton = Instance.new("TextButton", TabsScroll)
-		TabButton.Name = "TabButton_" .. indexnumber
-		TabButton.LayoutOrder = tonumber(indexnumber)
-		TabButton.Size = UDim2.new(1, 0, 0, 30)
-		-- Start fully transparent (idle state)
-		TabButton.BackgroundColor3 = COL_TAB_BG_SEL
-		TabButton.BackgroundTransparency = TRAN_TAB_IDLE
-		TabButton.Text = labelText
-		TabButton.TextColor3 = COL_TAB_IDLE
-		TabButton.TextSize = 12
-		TabButton.Font = Enum.Font.GothamMedium
-		TabButton.TextXAlignment = Enum.TextXAlignment.Left
-		TabButton.TextTruncate = Enum.TextTruncate.AtEnd
-		TabButton.AutoButtonColor = false
-		-- No TextStroke, no UIStroke – just plain text
-
-		local pad = Instance.new("UIPadding", TabButton)
-		pad.PaddingLeft = UDim.new(0, 8)
-		pad.PaddingRight = UDim.new(0, 6)
-
-		local tabCorner = Instance.new("UICorner", TabButton)
-		tabCorner.CornerRadius = UDim.new(0, 10)
-		
-		local stroke = Instance.new("UIStroke", TabButton)
-		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-		stroke.Color = Color3.fromRGB(255, 255, 255)
-		stroke.Thickness = 1
-		stroke.Transparency = 0.2
-
-		-- ── Tab page ───────────────────────────────────────────────────────
-		--   mode == nil or "scroll"  →  ScrollingFrame (default)
-		--   mode == "full"           →  plain Frame (full/custom)
-
-		local TabPage   -- the visible container placed inside FrameTabs
-		local ContentParent  -- where AddButton/AddToggle/etc. put their rows
-
-		if mode == "full" then
-			-- ── Full / custom mode ─────────────────────────────────────────
-			TabPage = Instance.new("Frame", FrameTabs)
-			TabPage.Name = "TabFrame" .. indexnumber
-			TabPage.Visible = false
-			TabPage.Size = UDim2.new(1, 0, 1, 0)
-			TabPage.BackgroundTransparency = 1
-			TabPage.ClipsDescendants = true
-			-- In full mode the caller owns the layout; ContentParent == TabPage
-			ContentParent = TabPage
+		if f.multiline then
+			local bPad = Instance.new("UIPadding", box)
+			bPad.PaddingLeft = UDim.new(0, 6)
+			bPad.PaddingTop  = UDim.new(0, 4)
 		else
-			-- ── Default scroll mode ────────────────────────────────────────
-			TabPage = Instance.new("Frame", FrameTabs)
-			TabPage.Name = "TabFrame" .. indexnumber
-			TabPage.Visible = false
-			TabPage.Size = UDim2.new(1, 0, 1, 0)
-			TabPage.BackgroundTransparency = 1
-			TabPage.ClipsDescendants = true
-
-			local sf = Instance.new("ScrollingFrame", TabPage)
-			sf.Name = "ContentScroll"
-			sf.Size = UDim2.new(1, 0, 1, 0)
-			sf.Position = UDim2.new(0, 0, 0, 0)
-			sf.BackgroundTransparency = 1
-			sf.ScrollBarThickness = 0
-			sf.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-			sf.ScrollingDirection = Enum.ScrollingDirection.Y
-			sf.CanvasSize = UDim2.new(0, 0, 0, 0)
-			sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
-			sf.ClipsDescendants = true
-
-			local sfLayout = Instance.new("UIListLayout", sf)
-			sfLayout.Padding = UDim.new(0, 6)
-			sfLayout.SortOrder = Enum.SortOrder.LayoutOrder
-			sfLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-			local sfPad = Instance.new("UIPadding", sf)
-			sfPad.PaddingTop = UDim.new(0, 8)
-			sfPad.PaddingLeft = UDim.new(0, 8)
-			sfPad.PaddingRight = UDim.new(0, 8)
-			sfPad.PaddingBottom = UDim.new(0, 8)
-
-			ContentParent = sf
+			local bPad = Instance.new("UIPadding", box)
+			bPad.PaddingLeft  = UDim.new(0, 6)
+			bPad.PaddingRight = UDim.new(0, 6)
 		end
 
-		-- ── Tab API object ─────────────────────────────────────────────────
-		local Tab = {Frame = TabPage, Content = ContentParent}
-		Tabs[labelText] = Tab
-		local componentOrder = 0
-		local function nextOrder()
-			componentOrder = componentOrder + 1
-			return componentOrder
-		end
-		
-		function Tab:Select()
-			-- Deselect all tabs
-			for _, child in TabsScroll:GetChildren() do
-				if child:IsA("TextButton") then
-					TweenService:Create(child, TWEEN_FAST, {
-						BackgroundTransparency = TRAN_TAB_IDLE,
-						TextColor3 = COL_TAB_IDLE,
-					}):Play()
-				end
-			end
-			-- Hide all pages
-			for _, tab in FrameTabs:GetChildren() do
-				tab.Visible = false
-			end
-			-- Select this tab
-			TweenService:Create(TabButton, TWEEN_MEDIUM, {
-				BackgroundTransparency = TRAN_TAB_SEL,
-				TextColor3 = COL_TAB_SEL,
-			}):Play()
-			TabPage.Visible = true
-		end
-		
-		-- ── Tab button click: deselect all, select this one (tweened) ──────
-		TabButton.MouseButton1Click:Connect(function()
-			Tab:Select()
-		end)
-
-		-- ── AddButton ─────────────────────────────────────────────────────
-		--   name     – button label
-		--   info     – small subtitle text (can be nil)
-		--   callback – called on click
-		function Tab:AddButton(name, info, callback)
-			local row = MakeRow(ContentParent, 38)
-			row.LayoutOrder = nextOrder()
-			row.BackgroundColor3 = Color3.fromRGB(25, 25, 28)
-			row.BackgroundTransparency = 0.3
-
-			local rowCorner = Instance.new("UICorner", row)
-			rowCorner.CornerRadius = UDim.new(0, 10)
-
-			local titleLbl = MakeLabel(row, name, info)
-
-			local btn = Instance.new("TextButton", row)
-			btn.Name = "ActionBtn"
-			btn.Size = UDim2.new(1, 0, 1, 0)
-			btn.BackgroundTransparency = 1
-			btn.Text = ""
-			btn.AutoButtonColor = false
-			
-			local icon = Instance.new("ImageLabel", row)
-			icon.Name = "TapIcon"
-			icon.Size = UDim2.new(0, 20, 0, 20)
-			icon.Position = UDim2.new(1, -8, 0.5, 0)
-			icon.AnchorPoint = Vector2.new(1, 0.5)
-			icon.BackgroundTransparency = 1
-			icon.Image = "rbxassetid://3926305904"
-			icon.ImageRectSize = Vector2.new(36, 36)
-			icon.ImageRectOffset = Vector2.new(84, 204)
-
-			-- Hover / press feedback
-			btn.MouseEnter:Connect(function()
-				TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(80, 80, 88)}):Play()
-			end)
-			btn.MouseLeave:Connect(function()
-				TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(25, 25, 28)}):Play()
-			end)
-			btn.MouseButton1Down:Connect(function()
-				TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(40, 40, 45)}):Play()
-			end)
-			btn.MouseButton1Up:Connect(function()
-				TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(25, 25, 28)}):Play()
-			end)
-			btn.MouseButton1Click:Connect(function()
-				if callback then callback() end
-			end)
-
-			local ButtonFunction = {}
-			function ButtonFunction:UpdateButton(newTitle)
-				titleLbl.Text = tostring(newTitle)
-			end
-			function ButtonFunction:Remove() row:Destroy() end
-			return ButtonFunction
-		end
-
-		-- ── AddToggle ─────────────────────────────────────────────────────
-		--   name     – label
-		--   info     – subtitle (can be nil)
-		--   callback – called with (bool) on change
-		function Tab:AddToggle(name, info, default, callback)
-			if type(default) == "function" then
-				callback = default
-				default = false
-			end
-			default = default ~= nil and default or false
-			
-			local toggled = default
-			
-			-- Track pill
-			local trackW, trackH = 44, 24
-			
-			local knobX   = toggled and (trackW - (trackH - 6) - 3) or 3
-			local trackBG = toggled and Color3.fromRGB(100, 180, 255) or Color3.fromRGB(55, 55, 60)
-			
-			local row = MakeRow(ContentParent, 38)
-			row.LayoutOrder = nextOrder()
-			row.BackgroundColor3 = Color3.fromRGB(25, 25, 28)
-			row.BackgroundTransparency = 0.3
-
-			local rowCorner = Instance.new("UICorner", row)
-			rowCorner.CornerRadius = UDim.new(0, 10)
-
-			MakeLabel(row, name, info)
-
-			local track = Instance.new("Frame", row)
-			track.Name = "Track"
-			track.Size = UDim2.new(0, trackW, 0, trackH)
-			track.AnchorPoint = Vector2.new(1, 0.5)
-			track.Position = UDim2.new(1, -10, 0.5, 0)
-			track.BackgroundColor3 = trackBG
-			track.BackgroundTransparency = 0
-
-			local trackCorner = Instance.new("UICorner", track)
-			trackCorner.CornerRadius = UDim.new(1, 0)
-
-			-- Knob
-			local knob = Instance.new("Frame", track)
-			knob.Name = "Knob"
-			knob.Size = UDim2.new(0, trackH - 6, 0, trackH - 6)
-			knob.AnchorPoint = Vector2.new(0, 0.5)
-			knob.Position = UDim2.new(0, knobX, 0.5, 0)
-			knob.BackgroundColor3 = Color3.fromRGB(200, 200, 205)
-
-			local knobCorner = Instance.new("UICorner", knob)
-			knobCorner.CornerRadius = UDim.new(1, 0)
-
-			local function SetToggle(state)
-				toggled = state
-				local knobX   = state and (trackW - (trackH - 6) - 3) or 3
-				local trackBG = state and Color3.fromRGB(100, 180, 255) or Color3.fromRGB(55, 55, 60)
-				TweenService:Create(knob,  TWEEN_MEDIUM, {Position = UDim2.new(0, knobX, 0.5, 0)}):Play()
-				TweenService:Create(track, TWEEN_MEDIUM, {BackgroundColor3 = trackBG}):Play()
-				if callback then callback(toggled) end
-			end
-
-			-- Clicking anywhere on the row flips the toggle
-			local hitBtn = Instance.new("TextButton", row)
-			hitBtn.Size = UDim2.new(1, 0, 1, 0)
-			hitBtn.BackgroundTransparency = 1
-			hitBtn.Text = ""
-			hitBtn.ZIndex = 5
-			hitBtn.MouseButton1Click:Connect(function()
-				SetToggle(not toggled)
-			end)
-
-			local ToggleFunction = {}
-			function ToggleFunction:UpdateToggle(state)
-				SetToggle(state ~= nil and state or not toggled)
-			end
-			function ToggleFunction:GetValue()
-				return toggled
-			end
-			function ToggleFunction:Remove() row:Destroy() end
-			return ToggleFunction
-		end
-
-		-- ── AddSlider ─────────────────────────────────────────────────────
-		--   name     – label
-		--   info     – subtitle (can be nil)
-		--   min      – minimum value  (default 0)
-		--   max      – maximum value  (default 100)
-		--   step     – increment amount (default 1)
-		--   callback – called with (number) on change
-		function Tab:AddSlider(name, info, min, max, step, default, callback)
-		    min  = min  or 0
-		    max  = max  or 100
-		    step = step or 1
-		    if type(default) == "function" then
-		        callback = default
-		        default = min
-		    end
-		    default = (default ~= nil) and default or min
-		
-		    local rowH = info and 62 or 52
-		    local row = MakeRow(ContentParent, rowH)
-		    row.LayoutOrder = nextOrder()
-		    row.BackgroundColor3 = Color3.fromRGB(25, 25, 28)
-		    row.BackgroundTransparency = 0.3
-		
-		    local rowCorner = Instance.new("UICorner", row)
-		    rowCorner.CornerRadius = UDim.new(0, 10)
-		
-		    MakeLabel(row, name, info)
-		
-		    -- Value readout
-		    local valLabel = Instance.new("TextLabel", row)
-		    valLabel.Size = UDim2.new(0, 36, 0, 16)
-		    valLabel.AnchorPoint = Vector2.new(1, 0)
-		    valLabel.Position = UDim2.new(1, -10, 0, 6)
-		    valLabel.BackgroundTransparency = 1
-		    valLabel.Text = tostring(min)
-		    valLabel.TextColor3 = Color3.fromRGB(180, 180, 185)
-		    valLabel.TextSize = 11
-		    valLabel.Font = Enum.Font.GothamMedium
-		    valLabel.TextXAlignment = Enum.TextXAlignment.Right
-		
-		    -- Track bar
-		    local trackBar = Instance.new("Frame", row)
-		    trackBar.Name = "SliderTrack"
-		    trackBar.Size = UDim2.new(1, -20, 0, 6)
-		    trackBar.Position = UDim2.new(0, 10, 1, -14)
-		    trackBar.AnchorPoint = Vector2.new(0, 1)
-		    trackBar.BackgroundColor3 = Color3.fromRGB(55, 55, 60)
-		
-		    local trackC = Instance.new("UICorner", trackBar)
-		    trackC.CornerRadius = UDim.new(1, 0)
-		
-		    -- Fill
-		    local fill = Instance.new("Frame", trackBar)
-		    fill.Name = "Fill"
-		    fill.Size = UDim2.new(0, 0, 1, 0)
-		    fill.BackgroundColor3 = Color3.fromRGB(100, 180, 255)
-		    fill.ClipsDescendants = false
-		
-		    local fillC = Instance.new("UICorner", fill)
-		    fillC.CornerRadius = UDim.new(1, 0)
-		
-		    -- Knob
-		    local knob = Instance.new("Frame", trackBar)
-		    knob.Name = "Knob"
-		    knob.Size = UDim2.new(0, 14, 0, 14)
-		    knob.AnchorPoint = Vector2.new(0.5, 0.5)
-		    knob.Position = UDim2.new(0, 0, 0.5, 0)
-		    knob.BackgroundColor3 = Color3.fromRGB(220, 220, 225)
-		
-		    local knobC = Instance.new("UICorner", knob)
-		    knobC.CornerRadius = UDim.new(1, 0)
-		
-		    local currentValue = min
-		    local function SetValue(v)
-		        v = math.clamp(math.round(v / step) * step, min, max)
-		        currentValue = v
-		        local t = (v - min) / (max - min)
-		        fill.Size = UDim2.new(t, 0, 1, 0)
-		        knob.Position = UDim2.new(t, 0, 0.5, 0)
-		        valLabel.Text = tostring(v)
-		        if callback then callback(v) end
-		    end
-		    SetValue(default)
-		
-		    -- Drag interaction
-		    local sliderDragging = false
-		    local function CalcValue(inputX)
-		        local absSize = trackBar.AbsoluteSize.X
-		        local relX = inputX - trackBar.AbsolutePosition.X
-		        local t = math.clamp(relX / absSize, 0, 1)
-		        return min + t * (max - min)
-		    end
-		
-		    trackBar.InputBegan:Connect(function(inp)
-		        if inp.UserInputType == Enum.UserInputType.MouseButton1
-		            or inp.UserInputType == Enum.UserInputType.Touch then
-		            sliderDragging = true
-		            SetValue(CalcValue(inp.Position.X))
-		        end
-		    end)
-		    UserInputService.InputChanged:Connect(function(inp)
-		        if sliderDragging and (inp.UserInputType == Enum.UserInputType.MouseMovement
-		            or inp.UserInputType == Enum.UserInputType.Touch) then
-		            SetValue(CalcValue(inp.Position.X))
-		        end
-		    end)
-		    UserInputService.InputEnded:Connect(function(inp)
-		        if inp.UserInputType == Enum.UserInputType.MouseButton1
-		            or inp.UserInputType == Enum.UserInputType.Touch then
-		            sliderDragging = false
-		        end
-		    end)
-		
-		    local SliderFunction = {}
-		    function SliderFunction:SetValue(v) SetValue(v) end
-		    function SliderFunction:GetValue()  return currentValue end
-			function SliderFunction:Remove() row:Destroy() end
-		    return SliderFunction
-		end
-
-		-- ── AddDropdown ───────────────────────────────────────────────────
-		--   name     – label
-		--   info     – subtitle (can be nil)
-		--   options  – array of any values
-		--   mode     – "single" (default) or "multiple"
-		--             if a function is passed, defaults to "single"
-		--   callback – single: (value)  |  multiple: (selectedList)
-		function Tab:AddDropdown(name, info, options, mode, callback)
-			options = options or {}
-			if type(mode) == "function" then
-				callback = mode
-				mode = "single"
-			end
-			local isMulti = mode == "multiple" or mode == true
-			local itemH   = 28
-			local closedH = 38
-			local openedH = closedH + math.min(#options, 5) * itemH + 4
-
-			local row = MakeRow(ContentParent, closedH)
-			row.LayoutOrder = nextOrder()
-			row.BackgroundColor3 = Color3.fromRGB(25, 25, 28)
-			row.BackgroundTransparency = 0.3
-			row.ClipsDescendants = true
-
-			local rowCorner = Instance.new("UICorner", row)
-			rowCorner.CornerRadius = UDim.new(0, 10)
-
-			MakeLabel(row, name, info)
-			
-			local hitBtn = Instance.new("TextButton", row)
-			hitBtn.Size = UDim2.new(1, 0, 0, closedH)
-			hitBtn.BackgroundTransparency = 1
-			hitBtn.Text = ""
-			hitBtn.ZIndex = 5
-			
-			local selLabel = Instance.new("TextLabel", hitBtn)
-			selLabel.Size = UDim2.new(0, 80, 0, 22)
-			selLabel.AnchorPoint = Vector2.new(1, 0.5)
-			selLabel.Position = UDim2.new(1, -30, 0.5, 0)
-			selLabel.BackgroundTransparency = 1
-			selLabel.Text = "None"
-			selLabel.TextColor3 = Color3.fromRGB(160, 160, 165)
-			selLabel.TextSize = 11
-			selLabel.Font = Enum.Font.Gotham
-			selLabel.TextXAlignment = Enum.TextXAlignment.Right
-			selLabel.TextTruncate = Enum.TextTruncate.AtEnd
-
-			local arrow = Instance.new("TextButton", hitBtn)
-			arrow.Size = UDim2.new(0, 26, 0, 26)
-			arrow.AnchorPoint = Vector2.new(1, 0.5)
-			arrow.Position = UDim2.new(1, -6, 0.5, 0)
-			arrow.BackgroundTransparency = 1
-			arrow.Text = "↓"
-			arrow.TextColor3 = Color3.fromRGB(160, 160, 165)
-			arrow.TextSize = 14
-			arrow.Font = Enum.Font.GothamBold
-			arrow.ZIndex = 6
-			arrow.AutoButtonColor = false
-
-			local list = Instance.new("ScrollingFrame", row)
-			list.Name = "DropList"
-			list.Size = UDim2.new(1, -20, 0, math.min(#options, 5) * itemH)
-			list.Position = UDim2.new(0, 10, 0, closedH + 2)
-			list.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-			list.BackgroundTransparency = 0
-			list.ScrollBarThickness = 0
-			list.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-			list.CanvasSize = UDim2.new(0, 0, 0, 0)
-			list.AutomaticCanvasSize = Enum.AutomaticSize.Y
-			list.ClipsDescendants = true
-			list.Visible = false
-
-			local listC = Instance.new("UICorner", list)
-			listC.CornerRadius = UDim.new(0, 8)
-
-			local listLayout = Instance.new("UIListLayout", list)
-			listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-			listLayout.Padding = UDim.new(0, 0)
-
-			local selectedVal  = nil
-			local selectedList = {}
-			local isOpen = false
-			local optionSetters = {}
-
-			local function UpdateSelLabel()
-				if isMulti then
-					if #selectedList == 0 then
-						selLabel.Text = "None"
-					elseif #selectedList == 1 then
-						selLabel.Text = tostring(selectedList[1])
-					else
-						selLabel.Text = #selectedList .. " selected"
-					end
-				else
-					selLabel.Text = selectedVal ~= nil and tostring(selectedVal) or "None"
-				end
-			end
-
-			local function OpenDropdown()
-				isOpen = true
-				list.Visible = true
-				arrow.Text = "↑"
-				TweenService:Create(row, TWEEN_MEDIUM, {Size = UDim2.new(1, 0, 0, openedH)}):Play()
-			end
-
-			local function CloseDropdown()
-				isOpen = false
-				arrow.Text = "↓"
-				TweenService:Create(row, TWEEN_MEDIUM, {Size = UDim2.new(1, 0, 0, closedH)}):Play()
-				task.delay(TWEEN_MEDIUM.Time, function() list.Visible = false end)
-			end
-
-			local function MakeOptionButton(i, opt)
-				local optBtn = Instance.new("TextButton", list)
-				optBtn.LayoutOrder = i
-				optBtn.Size = UDim2.new(1, 0, 0, itemH)
-				optBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
-				optBtn.BackgroundTransparency = 1
-				optBtn.BorderSizePixel = 0
-				optBtn.Text = tostring(opt)
-				optBtn.TextColor3 = Color3.fromRGB(200, 200, 205)
-				optBtn.TextSize = 12
-				optBtn.Font = Enum.Font.Gotham
-				optBtn.TextXAlignment = Enum.TextXAlignment.Left
-				optBtn.AutoButtonColor = false
-
-				local optPad = Instance.new("UIPadding", optBtn)
-				optPad.PaddingLeft = UDim.new(0, isMulti and 28 or 10)
-
-				local check = Instance.new("TextLabel", optBtn)
-				check.Size = UDim2.new(0, 18, 1, 0)
-				check.AnchorPoint = Vector2.new(1, 0)
-				check.BackgroundTransparency = 1
-				check.Text = ""
-				check.TextColor3 = Color3.fromRGB(100, 180, 255)
-				check.TextSize = 12
-				check.Font = Enum.Font.GothamBold
-				check.Visible = isMulti
-
-				local isSel = false
-
-				local function SetSel(state)
-					isSel = state
-					if isMulti then check.Text = state and "✓" or "" end
-					TweenService:Create(optBtn, TWEEN_FAST, {
-						BackgroundTransparency = state and 0.75 or 1
-					}):Play()
-					UpdateSelLabel()
-				end
-
-				optionSetters[opt] = SetSel
-
-				optBtn.MouseEnter:Connect(function()
-					if not isSel then
-						TweenService:Create(optBtn, TWEEN_FAST, {BackgroundTransparency = 0.88}):Play()
-					end
-				end)
-				optBtn.MouseLeave:Connect(function()
-					if not isSel then
-						TweenService:Create(optBtn, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
-					end
-				end)
-
-				optBtn.MouseButton1Click:Connect(function()
-					if isMulti then
-						local idx = table.find(selectedList, opt)
-						if idx then
-							table.remove(selectedList, idx)
-							SetSel(false)
-						else
-							table.insert(selectedList, opt)
-							SetSel(true)
-						end
-						if callback then callback(selectedList) end
-					else
-						if selectedVal ~= nil and optionSetters[selectedVal] then
-							optionSetters[selectedVal](false)
-						end
-						selectedVal = opt
-						SetSel(true)
-						CloseDropdown()
-						if callback then callback(selectedVal) end
-					end
-				end)
-			end
-
-			for i, opt in ipairs(options) do
-				MakeOptionButton(i, opt)
-			end
-
-			arrow.MouseButton1Click:Connect(function()
-				if isOpen then CloseDropdown() else OpenDropdown() end
-			end)
-			
-			hitBtn.MouseButton1Click:Connect(function()
-				if isOpen then CloseDropdown() else OpenDropdown() end
-			end)
-
-			local DropFunction = {}
-			function DropFunction:SelectOption(opts, state)
-			    local newState = state ~= nil and state or true
-			    local optsTable = type(opts) == "table" and opts or {opts}
-			    
-			    if isMulti then
-			        for _, opt in ipairs(optsTable) do
-			            local idx = table.find(selectedList, opt)
-			            if newState and not idx then
-			                table.insert(selectedList, opt)
-			            elseif not newState and idx then
-			                table.remove(selectedList, idx)
-			            end
-			            if optionSetters[opt] then optionSetters[opt](newState) end
-			        end
-			        if callback then callback(selectedList) end
-			    else
-			        -- single mode: only last opt in table wins
-			        if selectedVal ~= nil and optionSetters[selectedVal] then
-			            optionSetters[selectedVal](false)
-			        end
-			        local opt = optsTable[#optsTable]
-			        if newState then
-			            selectedVal = opt
-			            if optionSetters[opt] then optionSetters[opt](true) end
-			            if callback then callback(selectedVal) end
-			        else
-			            selectedVal = nil
-			            UpdateSelLabel()
-			        end
-			    end
-			end
-			function DropFunction:UpdateOptions(newOpts)
-				for i, opt in ipairs(newOpts) do
-					if not table.find(options, opt) then
-						table.insert(options, opt)
-						MakeOptionButton(#options + 1, opt)
-					end
-				end
-				openedH = closedH + math.min(#options, 5) * itemH + 4
-				list.Size = UDim2.new(1, -20, 0, math.min(#options, 5) * itemH)
-			end
-			
-			function DropFunction:SetOptions(newOpts)
-				for _, c in list:GetChildren() do
-					if c:IsA("TextButton") then c:Destroy() end
-				end
-				selectedVal  = nil
-				selectedList = {}
-				optionSetters = {}
-				UpdateSelLabel()
-				options = newOpts
-				openedH = closedH + math.min(#options, 5) * itemH + 4
-				list.Size = UDim2.new(1, -20, 0, math.min(#options, 5) * itemH)
-				for i, opt in ipairs(options) do
-					MakeOptionButton(i, opt)
-				end
-			end
-			function DropFunction:GetSelected()
-				return isMulti and selectedList or selectedVal
-			end
-			function DropFunction:Close() CloseDropdown() end
-			return DropFunction
-		end
-
-		-- ── AddTextBox ────────────────────────────────────────────────────
-		--   name        – label
-		--   info        – subtitle (can be nil)
-		--   placeholder – placeholder string (can be nil)
-		--   callback    – called with (text) when Enter or focus lost
-		function Tab:AddTextBox(name, info, placeholder, callback)
-			local row = MakeRow(ContentParent, 38)
-			row.LayoutOrder = nextOrder()
-			row.BackgroundColor3 = Color3.fromRGB(25, 25, 28)
-			row.BackgroundTransparency = 0.3
-
-			local rowCorner = Instance.new("UICorner", row)
-			rowCorner.CornerRadius = UDim.new(0, 10)
-
-			MakeLabel(row, name, info)
-
-			local box = Instance.new("TextBox", row)
-			box.Name = "InputBox"
-			box.Size = UDim2.new(0.42, 0, 0, 26)
-			box.AnchorPoint = Vector2.new(1, 0.5)
-			box.Position = UDim2.new(1, -6, 0.5, 0)
-			box.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
-			box.BackgroundTransparency = 0
-			box.PlaceholderText = placeholder or "Type here…"
-			box.PlaceholderColor3 = Color3.fromRGB(100, 100, 105)
-			box.Text = ""
-			box.TextColor3 = Color3.fromRGB(220, 220, 225)
-			box.TextSize = 12
-			box.TextWrapped = true
-			box.Font = Enum.Font.Gotham
-			box.ClearTextOnFocus = false
-
-			local boxCorner = Instance.new("UICorner", box)
-			boxCorner.CornerRadius = UDim.new(0, 7)
-
-			-- Focus outline
-			box.Focused:Connect(function()
-				TweenService:Create(box, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(55, 55, 60)}):Play()
-			end)
-			box.FocusLost:Connect(function(enterPressed)
-				TweenService:Create(box, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(40, 40, 44)}):Play()
-				if callback then callback(box.Text, enterPressed) end
-			end)
-
-			local TextBoxFunction = {}
-			function TextBoxFunction:GetText() return box.Text end
-			function TextBoxFunction:SetText(t) box.Text = tostring(t) end
-			return TextBoxFunction
-		end
-
-		-- ── AddTextLabel ──────────────────────────────────────────────────
-		--   text  – string to display
-		--   size  – font size (default 13)
-		--   color – Color3 (default white)
-		function Tab:AddTextLabel(text, size, color)
-			local row = MakeRow(ContentParent, 14)
-			row.LayoutOrder = nextOrder()
-			row.BackgroundTransparency = 1
-
-			local lbl = Instance.new("TextLabel", row)
-			lbl.Name = "TextLabel"
-			lbl.Size = UDim2.new(1, -20, 1, 0)
-			lbl.Position = UDim2.new(0, 5, 0, 0)
-			lbl.BackgroundTransparency = 1
-			lbl.Text = text or ""
-			lbl.TextColor3 = color or Color3.fromRGB(230, 230, 230)
-			lbl.TextSize = size or 13
-			lbl.Font = Enum.Font.Gotham
-			lbl.TextXAlignment = Enum.TextXAlignment.Left
-			lbl.TextWrapped = true
-
-			local LabelFunction = {}
-			function LabelFunction:SetText(t) lbl.Text = tostring(t) end
-			function LabelFunction:SetColor(c) lbl.TextColor3 = c end
-			return LabelFunction
-		end
-		
-		return Tab
+		table.insert(boxes, box)
+		yOffset += fh + PAD
 	end
-	
-	--=== Set Window Background ===--
-	function Lib:SetBackground(image, transparency)
-		pcall(writefile, SAVE_DIR .. "/bg.json", jsonencode({image, transparency}))
-		local image = image
-			and ("https://www.roblox.com/asset-thumbnail/image?assetId=" .. tostring(image) .. "&width=420&height=420&format=png")
-			or ""
-		local transparency = transparency or 0.5
-		
-		Background.Image = image
-		Background.ImageTransparency = transparency
-		
-		ScrollBG.Image = image
-		ScrollBG.ImageTransparency = transparency
-	end
-	
-	--=== Set Background Image from Save ===--
-	local success, content = pcall(readfile, SAVE_DIR .. "/bg.json")
-	if success then
-		Lib:SetBackground(unpack(jsondecode(content)))
-	end
-	
-	getgenv().DARK_LIB = Lib
-	return Lib
+
+	-- confirm / cancel row
+	local confirmBtn = Instance.new("TextButton", popup)
+	confirmBtn.Size = UDim2.new(0.45, 0, 0, BTN_H)
+	confirmBtn.Position = UDim2.new(0.05, 0, 0, yOffset)
+	confirmBtn.BackgroundColor3 = Color3.fromRGB(0, 80, 0)
+	confirmBtn.BackgroundTransparency = 0.2
+	confirmBtn.BorderSizePixel = 0
+	confirmBtn.Text = "Confirm"
+	confirmBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+	confirmBtn.TextSize = 12
+	confirmBtn.Font = Enum.Font.GothamBold
+	confirmBtn.ZIndex = 22
+	local ccCorner = Instance.new("UICorner", confirmBtn)
+	ccCorner.CornerRadius = UDim.new(0, 8)
+
+	local cancelBtn = Instance.new("TextButton", popup)
+	cancelBtn.Size = UDim2.new(0.45, 0, 0, BTN_H)
+	cancelBtn.Position = UDim2.new(0.5, 0, 0, yOffset)
+	cancelBtn.BackgroundColor3 = Color3.fromRGB(80, 0, 0)
+	cancelBtn.BackgroundTransparency = 0.2
+	cancelBtn.BorderSizePixel = 0
+	cancelBtn.Text = "Cancel"
+	cancelBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+	cancelBtn.TextSize = 12
+	cancelBtn.Font = Enum.Font.GothamBold
+	cancelBtn.ZIndex = 22
+	local cxCorner = Instance.new("UICorner", cancelBtn)
+	cxCorner.CornerRadius = UDim.new(0, 8)
+
+	cancelBtn.MouseButton1Click:Connect(function()
+		backdrop:Destroy()
+	end)
+
+	confirmBtn.MouseButton1Click:Connect(function()
+		local values = {}
+		for _, box in ipairs(boxes) do
+			table.insert(values, box.Text)
+		end
+		backdrop:Destroy()
+		onConfirm(values)
+	end)
+
+	-- focus first field
+	task.defer(function()
+		if boxes[1] then boxes[1]:CaptureFocus() end
+	end)
+
+	return backdrop
 end
 
-getgenv().DARK = Dark
-return Dark
+-- ── Hub tab frame ─────────────────────────────────────────────────────────────
+local hub = Lib:AddTab("HUB", "full")
+hub.Frame.ClipsDescendants = true
+
+local HUB_PAD = 6
+local ITEM_H  = 36
+local BTN_W   = 26
+
+-- two buttons right of search: upload (⬆) only now
+-- layout: [SearchBar ........] [⬆]
+local TOPBAR_BTNS = BTN_W + HUB_PAD  -- 1 btn + right pad
+
+-- Search bar
+local SearchBar = Instance.new("TextBox", hub.Frame)
+SearchBar.Name = "SearchBar"
+SearchBar.AnchorPoint = Vector2.new(0, 0)
+SearchBar.Position = UDim2.new(0, HUB_PAD, 0, HUB_PAD)
+SearchBar.Size = UDim2.new(1, -(HUB_PAD + TOPBAR_BTNS + 4), 0, 26)
+SearchBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+SearchBar.BackgroundTransparency = 0.3
+SearchBar.BorderSizePixel = 0
+SearchBar.PlaceholderText = "Search scripts..."
+SearchBar.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+SearchBar.Text = ""
+SearchBar.TextColor3 = Color3.fromRGB(220, 220, 220)
+SearchBar.TextSize = 12
+SearchBar.Font = Enum.Font.GothamMedium
+SearchBar.TextXAlignment = Enum.TextXAlignment.Left
+SearchBar.ClearTextOnFocus = false
+
+local sbCorner = Instance.new("UICorner", SearchBar)
+sbCorner.CornerRadius = UDim.new(0, 8)
+local sbPad = Instance.new("UIPadding", SearchBar)
+sbPad.PaddingLeft = UDim.new(0, 8)
+sbPad.PaddingRight = UDim.new(0, 8)
+
+-- Upload button (⬆) — opens name+content popup
+local UploadBtn = Instance.new("TextButton", hub.Frame)
+UploadBtn.AnchorPoint = Vector2.new(1, 0)
+UploadBtn.Position = UDim2.new(1, -HUB_PAD, 0, HUB_PAD)
+UploadBtn.Size = UDim2.new(0, BTN_W, 0, 26)
+UploadBtn.BackgroundColor3 = Color3.fromRGB(0, 35, 60)
+UploadBtn.BackgroundTransparency = 0.2
+UploadBtn.Text = "⬆"
+UploadBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+UploadBtn.TextSize = 14
+UploadBtn.Font = Enum.Font.GothamBold
+UploadBtn.BorderSizePixel = 0
+local uploadCorner = Instance.new("UICorner", UploadBtn)
+uploadCorner.CornerRadius = UDim.new(1, 0)
+
+-- Scrollable list
+local LIST_TOP = HUB_PAD + 26 + HUB_PAD
+
+local HubScroll = Instance.new("ScrollingFrame", hub.Frame)
+HubScroll.Name = "HubScroll"
+HubScroll.AnchorPoint = Vector2.new(0, 0)
+HubScroll.Position = UDim2.new(0, 0, 0, LIST_TOP)
+HubScroll.Size = UDim2.new(1, 0, 1, -LIST_TOP)
+HubScroll.BackgroundTransparency = 1
+HubScroll.ScrollBarThickness = 3
+HubScroll.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80)
+HubScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+HubScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+HubScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+HubScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+HubScroll.BorderSizePixel = 0
+
+local HubLayout = Instance.new("UIListLayout", HubScroll)
+HubLayout.Padding = UDim.new(0, 2)
+HubLayout.SortOrder = Enum.SortOrder.LayoutOrder
+HubLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+local HubPad = Instance.new("UIPadding", HubScroll)
+HubPad.PaddingBottom = UDim.new(0, 4)
+HubPad.PaddingLeft = UDim.new(0, 4)
+HubPad.PaddingRight = UDim.new(0, 4)
+
+-- ── Divider rows ──────────────────────────────────────────────────────────────
+local DIVIDER_H = 18
+
+local function MakeDivider(labelText, order, isFav)
+	local row = Instance.new("Frame", HubScroll)
+	row.Name = "Divider_" .. labelText
+	row.LayoutOrder = order
+	row.Size = UDim2.new(1, 0, 0, DIVIDER_H)
+	row.BackgroundTransparency = 1
+
+	local lbl = Instance.new("TextLabel", row)
+	lbl.AnchorPoint = Vector2.new(0, 0.5)
+	lbl.Position = UDim2.new(0, 6, 0.5, 0)
+	lbl.Size = UDim2.new(0, 90, 1, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = labelText
+	lbl.TextColor3 = isFav
+		and Color3.fromRGB(255, 200, 0)
+		or  Color3.fromRGB(140, 140, 140)
+	lbl.TextSize = 10
+	lbl.Font = Enum.Font.GothamBold
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+	return row
+end
+
+-- layout order: favs = 1..499, divider at 0 and 500, all scripts = 501..999
+local FavDivider = MakeDivider("★  Favourites", 0,   true)
+local AllDivider = MakeDivider("All Scripts",   500, false)
+
+-- ── Entry helpers ─────────────────────────────────────────────────────────────
+local HubEntries = {}  -- [name] = { name, row, nameLabel, nameBox, favBtn }
+local searchQuery = ""
+
+local function MakeHubButton(parent, text, bgCol)
+	local b = Instance.new("TextButton", parent)
+	b.Size = UDim2.new(0, BTN_W, 0, BTN_W)
+	b.BackgroundColor3 = bgCol or Color3.fromRGB(30, 30, 30)
+	b.BackgroundTransparency = 0.3
+	b.BorderSizePixel = 0
+	b.Text = text
+	b.TextColor3 = Color3.fromRGB(220, 220, 220)
+	b.TextSize = 13
+	b.Font = Enum.Font.GothamBold
+	b.AutoButtonColor = true
+	local c = Instance.new("UICorner", b)
+	c.CornerRadius = UDim.new(1, 0)
+	return b
+end
+
+local function RefreshVisibility()
+	local q = searchQuery:lower()
+	local hasFav, hasAll = false, false
+	for name, entry in pairs(HubEntries) do
+		local visible = (q == "") or (name:lower():find(q, 1, true) ~= nil)
+		entry.row.Visible = visible
+		if visible then
+			if Favourites[name] then hasFav = true else hasAll = true end
+		end
+	end
+	FavDivider.Visible = hasFav
+	AllDivider.Visible = hasAll
+end
+
+local function SaveOrder()
+	print("Save Order Fired")
+	local sorted = {}
+	for _, entry in pairs(HubEntries) do
+		table.insert(sorted, entry)
+	end
+	table.sort(sorted, function(a, b)
+		return a.row.LayoutOrder < b.row.LayoutOrder
+	end)
+	local lines = {}
+	for _, entry in ipairs(sorted) do
+		table.insert(lines, entry.name)
+	end
+	pcall(writefile, ORDER_FILE, table.concat(lines, "\n"))
+	print(readfile(ORDER_FILE))
+end
+
+local function UpdateLayout()
+	local favOrder, allOrder = 1, 501
+	for name, entry in pairs(HubEntries) do
+		if Favourites[name] then
+			entry.row.LayoutOrder = favOrder
+			favOrder += 1
+		else
+			entry.row.LayoutOrder = allOrder
+			allOrder += 1
+		end
+	end
+	RefreshVisibility()
+end
+
+-- ── Shared drag state (only one drag active at a time) ───────────────────────
+local activeDrag = nil
+
+local function StopDrag()
+	if not activeDrag then return end
+	local d = activeDrag
+	activeDrag = nil
+	HubScroll.ScrollingEnabled = true
+	d.handle.TextColor3 = Color3.fromRGB(110, 110, 110)
+	d.row.BackgroundTransparency = 0.4
+	SaveOrder()
+end
+
+-- ── AddHubEntry ───────────────────────────────────────────────────────────────
+local function AddHubEntry(name, content)
+	if HubEntries[name] then return end
+
+	SaveHubScript(name, content or "")
+
+	local row = Instance.new("Frame", HubScroll)
+	row.Name = "HubEntry_" .. name
+	row.Size = UDim2.new(1, 0, 0, ITEM_H)
+	row.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+	row.BackgroundTransparency = 0.4
+	row.BorderSizePixel = 0
+
+	local rowCorner = Instance.new("UICorner", row)
+	rowCorner.CornerRadius = UDim.new(0, 8)
+
+	-- 5 buttons: exec, fav, import, autoexec, delete
+	local DRAG_W         = 22
+	local NAME_LEFT      = DRAG_W + 8
+	local NAME_RIGHT_PAD = BTN_W * 5
+	
+	-- ── drag handle ───────────────────────────────────────────────────────────
+	local dragHandle = Instance.new("TextButton", row)
+	dragHandle.Name = "DragHandle"
+	dragHandle.AnchorPoint = Vector2.new(0, 0.5)
+	dragHandle.Position = UDim2.new(0, 4, 0.5, 0)
+	dragHandle.Size = UDim2.new(0, DRAG_W, 0, DRAG_W)
+	dragHandle.BackgroundTransparency = 1
+	dragHandle.Text = "="
+	dragHandle.TextColor3 = Color3.fromRGB(110, 110, 110)
+	dragHandle.TextSize = 11
+	dragHandle.Font = Enum.Font.GothamBold
+	dragHandle.AutoButtonColor = false
+
+	-- name label (after handle)
+	local nameLabel = Instance.new("TextButton", row)
+	nameLabel.Name = "NameLabel"
+	nameLabel.AnchorPoint = Vector2.new(0, 0.5)
+	nameLabel.Position = UDim2.new(0, NAME_LEFT, 0.5, 0)
+	nameLabel.Size = UDim2.new(1, -(NAME_LEFT + NAME_RIGHT_PAD), 1, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = name
+	nameLabel.TextColor3 = Color3.fromRGB(210, 210, 210)
+	nameLabel.TextSize = 12
+	nameLabel.Font = Enum.Font.GothamMedium
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+
+	-- hidden rename TextBox
+	local nameBox = Instance.new("TextBox", row)
+	nameBox.Name = "NameBox"
+	nameBox.AnchorPoint = Vector2.new(0, 0.5)
+	nameBox.Position = UDim2.new(0, 10, 0.5, 0)
+	nameBox.Size = UDim2.new(1, -NAME_RIGHT_PAD, 1, 0)
+	nameBox.BackgroundTransparency = 1
+	nameBox.Text = name
+	nameBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nameBox.TextSize = 12
+	nameBox.Font = Enum.Font.GothamMedium
+	nameBox.TextXAlignment = Enum.TextXAlignment.Left
+	nameBox.ClearTextOnFocus = false
+	nameBox.Visible = false
+
+	-- right-side buttons container (5 buttons × BTN_W + 4 gaps of 4)
+	local btnRow = Instance.new("Frame", row)
+	btnRow.AnchorPoint = Vector2.new(1, 0.5)
+	btnRow.Position = UDim2.new(1, -6, 0.5, 0)
+	btnRow.Size = UDim2.new(0, BTN_W * 5 + 16, 0, BTN_W)
+	btnRow.BackgroundTransparency = 1
+
+	local btnLayout = Instance.new("UIListLayout", btnRow)
+	btnLayout.FillDirection = Enum.FillDirection.Horizontal
+	btnLayout.Padding = UDim.new(0, 4)
+	btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	btnLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+	local execBtn      = MakeHubButton(btnRow, "▶",  Color3.fromRGB(0, 55, 0))
+	local favBtn       = MakeHubButton(btnRow, Favourites[name] and "★" or "☆", Color3.fromRGB(45, 35, 0))
+	local importBtn    = MakeHubButton(btnRow, "↓",  Color3.fromRGB(0, 25, 55))
+	local autoExecBtn  = MakeHubButton(btnRow, "⚡", Color3.fromRGB(40, 40, 0))
+	local deleteBtn    = MakeHubButton(btnRow, "🗑", Color3.fromRGB(55, 0, 0))
+	execBtn.LayoutOrder     = 5
+	favBtn.LayoutOrder      = 4
+	importBtn.LayoutOrder   = 3
+	autoExecBtn.LayoutOrder = 2
+	deleteBtn.LayoutOrder   = 1
+
+	favBtn.TextColor3 = Favourites[name]
+		and Color3.fromRGB(255, 200, 0)
+		or  Color3.fromRGB(140, 140, 140)
+
+	-- auto-exec button visual state — uses name upvalue safely
+	local function RefreshAutoExecBtn()
+		if AutoExec[name] then
+			autoExecBtn.BackgroundColor3 = Color3.fromRGB(90, 80, 0)
+			autoExecBtn.TextColor3 = Color3.fromRGB(255, 230, 0)
+		else
+			autoExecBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 0)
+			autoExecBtn.TextColor3 = Color3.fromRGB(160, 160, 160)
+		end
+	end
+
+	local entry = {
+		name      = name,
+		row       = row,
+		nameLabel = nameLabel,
+		nameBox   = nameBox,
+		favBtn    = favBtn,
+	}
+
+	RefreshAutoExecBtn()
+
+	-- ── delete (two clicks, auto-disarms after 2s) ────────────────────────────
+	local pendingDelete = false
+	deleteBtn.MouseButton1Click:Connect(function()
+		if pendingDelete then
+			if Favourites[entry.name] then
+				Favourites[entry.name] = nil
+				SaveFavourites()
+			end
+			if AutoExec[entry.name] then
+				AutoExec[entry.name] = nil
+				SaveAutoExec()
+			end
+			DeleteHubScript(entry.name)
+			HubEntries[entry.name] = nil
+			row:Destroy()
+			RefreshVisibility()
+		else
+			pendingDelete = true
+			deleteBtn.BackgroundColor3 = Color3.fromRGB(160, 0, 0)
+			deleteBtn.BackgroundTransparency = 0.2
+			task.delay(2, function()
+				if pendingDelete and deleteBtn.Parent then
+					pendingDelete = false
+					deleteBtn.BackgroundColor3 = Color3.fromRGB(55, 0, 0)
+					deleteBtn.BackgroundTransparency = 0.3
+				end
+			end)
+		end
+	end)
+	HubEntries[name] = entry
+
+	-- ── drag-to-reorder ───────────────────────────────────────────────────────
+	local function GetSortedSection()
+		local isFav = Favourites[entry.name]
+		local list  = {}
+		for _, e in pairs(HubEntries) do
+			if (isFav and Favourites[e.name]) or (not isFav and not Favourites[e.name]) then
+				table.insert(list, e)
+			end
+		end
+		table.sort(list, function(a, b)
+			return a.row.LayoutOrder < b.row.LayoutOrder
+		end)
+		return list
+	end
+
+	dragHandle.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1
+			and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if activeDrag then return end
+
+		activeDrag = {
+			entry      = entry,
+			row        = row,
+			handle     = dragHandle,
+			startY     = input.Position.Y,
+			startOrder = row.LayoutOrder,
+			getSorted  = GetSortedSection,
+		}
+		HubScroll.ScrollingEnabled = false
+		dragHandle.TextColor3 = Color3.fromRGB(220, 220, 220)
+		row.BackgroundTransparency = 0.15
+	end)
+
+	-- ── auto-execute toggle ───────────────────────────────────────────────────
+	autoExecBtn.MouseButton1Click:Connect(function()
+		if AutoExec[entry.name] then
+			AutoExec[entry.name] = nil
+		else
+			AutoExec[entry.name] = true
+		end
+		SaveAutoExec()
+		RefreshAutoExecBtn()
+	end)
+
+	-- ── double-click to rename ────────────────────────────────────────────────
+	local lastClick = 0
+	nameLabel.MouseButton1Click:Connect(function()
+		local now = tick()
+		if now - lastClick < 0.4 then
+			nameLabel.Visible = false
+			nameBox.Visible = true
+			nameBox:CaptureFocus()
+		end
+		lastClick = now
+	end)
+
+	nameBox.FocusLost:Connect(function()
+		local newName = SanitizeName(nameBox.Text:match("^%s*(.-)%s*$"))
+		if newName == "" then newName = entry.name end
+
+		if newName ~= entry.name then
+			local oldName = entry.name
+			if Favourites[oldName] then
+				Favourites[oldName] = nil
+				Favourites[newName] = true
+				SaveFavourites()
+			end
+			RenameHubFile(oldName, newName)
+			HubEntries[oldName] = nil
+			entry.name = newName
+			HubEntries[newName] = entry
+			row.Name = "HubEntry_" .. newName
+		end
+
+		nameLabel.Text = entry.name
+		nameBox.Text   = entry.name
+		nameLabel.Visible = true
+		nameBox.Visible   = false
+		UpdateLayout()
+	end)
+
+	-- ── execute ───────────────────────────────────────────────────────────────
+	execBtn.MouseButton1Click:Connect(function()
+		local src = LoadHubScript(entry.name)
+		local fn, err = loadstring(src)
+		if fn then pcall(fn) else warn("Hub Execute Error:", err) end
+	end)
+
+	-- ── favourite toggle ──────────────────────────────────────────────────────
+	favBtn.MouseButton1Click:Connect(function()
+		if Favourites[entry.name] then
+			Favourites[entry.name] = nil
+			favBtn.Text = "☆"
+			favBtn.TextColor3 = Color3.fromRGB(140, 140, 140)
+		else
+			Favourites[entry.name] = true
+			favBtn.Text = "★"
+			favBtn.TextColor3 = Color3.fromRGB(255, 200, 0)
+		end
+		SaveFavourites()
+		UpdateLayout()
+	end)
+
+	-- ── import — always opens a new script tab ───────────────────────────────
+	importBtn.MouseButton1Click:Connect(function()
+		local src = LoadHubScript(entry.name)
+		tabCounter += 1
+		AddScriptTab(entry.name, src)
+		executor:Select()
+	end)
+
+	UpdateLayout()
+end
+
+-- ── Upload button — popup with name + content fields ─────────────────────────
+UploadBtn.MouseButton1Click:Connect(function()
+	MakePopup(hub.Frame, "Upload Script", {
+		{name = "Name",    placeholder = "Script name...",         multiline = false},
+		{name = "Content", placeholder = "-- Paste script here...", multiline = true},
+	}, function(values)
+		local newName = SanitizeName((values[1] or ""):match("^%s*(.-)%s*$"))
+		local content = values[2] or ""
+		if newName == "" then newName = "Uploaded Script" end
+		local base, n = newName, 1
+		while HubEntries[newName] do
+			newName = base .. " (" .. n .. ")"
+			n += 1
+		end
+		AddHubEntry(newName, content)
+	end)
+end)
+
+-- ── SaveBtn — save current executor tab into ScriptsHub ──────────────────────
+SaveBtn.MouseButton1Click:Connect(function()
+	local defaultName = (activeTab > 0 and ScriptTabs[activeTab])
+		and ScriptTabs[activeTab].name
+		or  "Saved Script"
+	local currentContent = ScriptBox.Text
+
+	MakePopup(executor.Frame, "Save to ScriptsHub", {
+		{name = "Name", placeholder = "Script name...", default = defaultName, multiline = false},
+	}, function(values)
+		local newName = SanitizeName((values[1] or ""):match("^%s*(.-)%s*$"))
+		if newName == "" then newName = defaultName end
+		local base, n = newName, 1
+		while HubEntries[newName] do
+			newName = base .. " (" .. n .. ")"
+			n += 1
+		end
+		AddHubEntry(newName, currentContent)
+	end)
+end)
+
+-- ── Search ────────────────────────────────────────────────────────────────────
+SearchBar:GetPropertyChangedSignal("Text"):Connect(function()
+	searchQuery = SearchBar.Text
+	RefreshVisibility()
+end)
+
+-- ── Boot: load existing hub scripts ──────────────────────────────────────────
+local function BootHub()
+	local ok, files = pcall(listfiles, HUB_DIR)
+	if not ok or not files then return end
+
+	-- load all entries first
+	table.sort(files)
+	for _, path in ipairs(files) do
+		local fileName = path:match("([^/\\]+)%.lua$")
+		if fileName then
+			AddHubEntry(fileName, LoadHubScript(fileName))
+		end
+	end
+
+	-- apply saved order from ORDER_FILE
+	local orderMap = {}
+	local ok2, raw = pcall(readfile, ORDER_FILE)
+	if ok2 then
+		local i = 1
+		for line in raw:gmatch("[^\n]+") do
+			orderMap[line:match("^%s*(.-)%s*$")] = i
+			i += 1
+		end
+	end
+
+	local favOrder, allOrder = 1, 501
+	local sorted = {}
+	for _, entry in pairs(HubEntries) do
+		table.insert(sorted, entry)
+	end
+	table.sort(sorted, function(a, b)
+		local oa = orderMap[a.name] or math.huge
+		local ob = orderMap[b.name] or math.huge
+		return oa < ob
+	end)
+	for _, entry in ipairs(sorted) do
+		if Favourites[entry.name] then
+			entry.row.LayoutOrder = favOrder
+			favOrder += 1
+		else
+			entry.row.LayoutOrder = allOrder
+			allOrder += 1
+		end
+	end
+
+	-- run auto-execute scripts
+	for name in pairs(AutoExec) do
+		if HubEntries[name] then
+			local src = LoadHubScript(name)
+			local fn, err = loadstring(src)
+			if fn then
+				pcall(fn)
+			else
+				warn("AutoExec Error [" .. name .. "]:", err)
+			end
+		end
+	end
+end
+
+BootHub()
+
+-- ── Global drag handlers ──────────────────────────────────────────────────────
+-- Movement and release tracked globally so drag continues even when the
+-- cursor/finger leaves the handle button.
+local UserInputService = game:GetService("UserInputService")
+UserInputService.InputChanged:Connect(function(input)
+	if not activeDrag then return end
+	if input.UserInputType ~= Enum.UserInputType.MouseMovement
+		and input.UserInputType ~= Enum.UserInputType.Touch then return end
+
+	local d           = activeDrag
+	local delta       = input.Position.Y - d.startY
+	local steps       = math.floor(delta / (ITEM_H + 2) + 0.5)
+	local targetOrder = d.startOrder + steps
+
+	local isFav      = Favourites[d.entry.name]
+	local sectionMin = isFav and 1   or 501
+	local sectionMax = isFav and 499 or 999
+	targetOrder = math.clamp(targetOrder, sectionMin, sectionMax)
+	if targetOrder == d.row.LayoutOrder then return end
+
+	for _, other in ipairs(d.getSorted()) do
+		if other ~= d.entry and other.row.LayoutOrder == targetOrder then
+			other.row.LayoutOrder = d.row.LayoutOrder
+			d.row.LayoutOrder     = targetOrder
+			break
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if not activeDrag then return end
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1
+		and input.UserInputType ~= Enum.UserInputType.Touch then return end
+	StopDrag()
+end)
