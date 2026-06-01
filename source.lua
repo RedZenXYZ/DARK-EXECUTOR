@@ -464,11 +464,10 @@ function Dark.CreateLib()
 	local Tabs = {}
 	
 	function Lib:GetTab(tab, create)
-		local tab = Tabs[tab]
-		if create and tab == nil then
+		if create and Tabs[tab] == nil then
 			return Lib:AddTab(tab)
 		end
-		return tab
+		return Tabs[tab]
 	end
 
 	--[[
